@@ -1,74 +1,188 @@
+using Robust.Shared.Audio;
 using Robust.Shared.Prototypes;
-using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype.Array;
 
-namespace Content.Shared.Polymorph
+namespace Content.Shared.Polymorph;
+
+/// <summary>
+/// Polymorphs generally describe any type of transformation that can be applied to an entity.
+/// </summary>
+[Prototype]
+[DataDefinition]
+public sealed partial class PolymorphPrototype : IPrototype, IInheritingPrototype
+{
+    [ViewVariables]
+    [IdDataField]
+    public string ID { get; private set; } = default!;
+
+    [ParentDataField(typeof(AbstractPrototypeIdArraySerializer<PolymorphPrototype>))]
+    public string[]? Parents { get; private set; }
+
+    [NeverPushInheritance]
+    [AbstractDataField]
+    public bool Abstract { get; private set; }
+
+    [DataField(required: true, serverOnly: true)]
+    public PolymorphConfiguration Configuration = new();
+
+}
+
+/// <summary>
+/// Defines information about the polymorph
+/// </summary>
+[DataDefinition]
+public sealed partial record PolymorphConfiguration
 {
     /// <summary>
-    /// Polymorphs generally describe any type of transformation that can be applied to an entity.
+    /// What entity the polymorph will turn the target into
+    /// must be in here because it makes no sense if it isn't
     /// </summary>
-    [Prototype("polymorph")]
-    [DataDefinition]
-    public sealed class PolymorphPrototype : IPrototype, IInheritingPrototype
-    {
-        [ViewVariables]
-        [IdDataFieldAttribute]
-        public string ID { get; } = default!;
+    [DataField(required: true, serverOnly: true)]
+    public EntProtoId Entity;
 
-        [DataField("name")]
-        public string Name { get; } = string.Empty;
+    /// <summary>
+    /// Additional entity to spawn when polymorphing/reverting.
+    /// Gets parented to the entity polymorphed into.
+    /// Useful for visual effects.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public EntProtoId? EffectProto;
 
-        [ParentDataField(typeof(AbstractPrototypeIdSerializer<PolymorphPrototype>))]
-        public string? Parent { get; private set; }
+    /// <summary>
+    /// The delay between the polymorph's uses in seconds
+    /// Slightly weird as of right now.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public int Delay = 60;
 
-        [NeverPushInheritance]
-        [AbstractDataFieldAttribute]
-        public bool Abstract { get; private set; }
+    /// <summary>
+    /// The duration of the transformation in seconds
+    /// can be null if there is not one
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public int? Duration;
 
-        /// <summary>
-        /// What entity the polymorph will turn the target into
-        /// must be in here because it makes no sense if it isn't
-        /// </summary>
-        [DataField("entity", required: true, serverOnly: true, customTypeSerializer: typeof(PrototypeIdSerializer<EntityPrototype>))]
-        public string Entity = string.Empty;
+    /// <summary>
+    /// whether or not the target can transform as will
+    /// set to true for things like polymorph spells and curses
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool Forced;
 
-        /// <summary>
-        /// The delay between the polymorph's uses in seconds
-        /// Slightly weird as of right now.
-        /// </summary>
-        [DataField("delay", serverOnly: true)]
-        public int Delay = 60;
+    /// <summary>
+    /// Whether or not the entity transfers its damage between forms.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool TransferDamage = true;
 
-        /// <summary>
-        /// The duration of the transformation in seconds
-        /// can be null if there is not one
-        /// </summary>
-        [DataField("duration", serverOnly: true)]
-        public int? Duration = null;
+    /// <summary>
+    /// Whether or not the entity transfers its name between forms.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool TransferName;
 
-        /// <summary>
-        /// whether or not the target can transform as will
-        /// set to true for things like polymorph spells and curses
-        /// </summary>
-        [DataField("forced", serverOnly: true)]
-        public bool Forced = false;
+    /// <summary>
+    /// Whether or not the entity transfers its hair, skin color, hair color, etc.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool TransferHumanoidAppearance;
 
-        /// <summary>
-        /// Whether or not the target will drop their inventory
-        /// when they are polymorphed (includes items in hands)
-        /// </summary>
-        [DataField("dropInventory", serverOnly: true)]
-        public bool DropInventory = false;
+    /// <summary>
+    /// Whether or not the entity transfers its inventory and equipment between forms.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public PolymorphInventoryChange Inventory = PolymorphInventoryChange.None;
 
-        /// <summary>
-        /// Whether or not the polymorph reverts when the entity goes into crit.
-        /// </summary>
-        [DataField("revertOnCrit", serverOnly: true)]
-        public bool RevertOnCrit = true;
+    /// <summary>
+    /// Whether or not the polymorph reverts when the entity goes into crit.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool RevertOnCrit = true;
 
-        /// <summary>
-        /// Whether or not the polymorph reverts when the entity dies.
-        /// </summary>
-        [DataField("revertOnDeath", serverOnly: true)]
-        public bool RevertOnDeath = true;
-    }
+    /// <summary>
+    /// Whether or not the polymorph reverts when the entity dies.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool RevertOnDeath = true;
+
+    /// <summary>
+    /// Whether or not the polymorph reverts when the entity is deleted.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool RevertOnDelete = true;
+
+    /// <summary>
+    /// Whether or not the polymorph reverts when the entity is eaten or fully sliced.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool RevertOnEat;
+
+    /// <summary>
+    /// If true, attempts to polymorph this polymorph will fail, unless
+    /// <see cref="IgnoreAllowRepeatedMorphs"/> is true on the /new/ morph.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool AllowRepeatedMorphs;
+
+    /// <summary>
+    /// If true, this morph will succeed even when used on an entity
+    /// that is already polymorphed with a configuration that has
+    /// <see cref="AllowRepeatedMorphs"/> set to false. Helpful for
+    /// smite polymorphs which should always succeed.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    public bool IgnoreAllowRepeatedMorphs;
+
+    /// <summary>
+    /// The amount of time that should pass after this polymorph has ended, before a new one
+    /// can occur.
+    /// </summary>
+    [DataField(serverOnly: true)]
+    [ViewVariables(VVAccess.ReadWrite)]
+    public TimeSpan Cooldown = TimeSpan.Zero;
+
+    /// <summary>
+    ///     If not null, this sound will be played when being polymorphed into something.
+    /// </summary>
+    [DataField]
+    public SoundSpecifier? PolymorphSound;
+
+    /// <summary>
+    ///     If not null, this sound will be played when being reverted from a polymorph.
+    /// </summary>
+    [DataField]
+    public SoundSpecifier? ExitPolymorphSound;
+
+    /// <summary>
+    ///     If not null, this popup will be displayed when being polymorphed into something.
+    /// </summary>
+    [DataField]
+    public LocId? PolymorphPopup = "polymorph-popup-generic";
+
+    /// <summary>
+    ///     If not null, this popup will be displayed when being reverted from a polymorph.
+    /// </summary>
+    [DataField]
+    public LocId? ExitPolymorphPopup = "polymorph-revert-popup-generic";
+}
+
+public enum PolymorphInventoryChange : byte
+{
+    /// <summary>
+    /// On polymorph, no items are transferred. The original form's inventory is
+    /// stored in a paused map. On revert, the polymorph drops its inventory.
+    /// </summary>
+    None,
+
+    /// <summary>
+    /// On polymorph and revert, all items are dropped.
+    /// </summary>
+    Drop,
+
+    /// <summary>
+    /// On polymorph and revert, an attempt to transfer inventories will be
+    /// made. Currently, this doesn't handle dependent inventory slots like
+    /// jumpsuit pockets.
+    /// </summary>
+    Transfer,
 }

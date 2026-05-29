@@ -1,13 +1,14 @@
-using Content.Server.Body.Components;
+using Content.Server.Body.Systems;
 using Content.Shared.Administration;
-using Content.Shared.Body.Components;
 using Robust.Shared.Console;
 
 namespace Content.Server.Administration.Commands
 {
-    [AdminCommand(AdminFlags.Fun)]
-    public sealed class RemoveMechanismCommand : IConsoleCommand
+    [AdminCommand(AdminFlags.Admin)]
+    public sealed partial class RemoveMechanismCommand : IConsoleCommand
     {
+        [Dependency] private IEntityManager _entManager = default!;
+
         public string Command => "rmmechanism";
         public string Description => "Removes a given entity from it's containing bodypart, if any.";
         public string Help => "Usage: rmmechanism <uid>";
@@ -20,27 +21,15 @@ namespace Content.Server.Administration.Commands
                 return;
             }
 
-            if (!EntityUid.TryParse(args[0], out var entityUid))
+            if (!NetEntity.TryParse(args[0], out var entityNet) || !_entManager.TryGetEntity(entityNet, out var entityUid))
             {
                 shell.WriteError(Loc.GetString("shell-entity-uid-must-be-number"));
                 return;
             }
 
-            var entityManager = IoCManager.Resolve<IEntityManager>();
-
-            if (!entityManager.TryGetComponent<TransformComponent>(entityUid, out var transform)) return;
-
-            var parent = transform.ParentUid;
-
-            if (entityManager.TryGetComponent<BodyPartComponent>(parent, out var body) &&
-                entityManager.TryGetComponent<MechanismComponent>(entityUid, out var part))
-            {
-                body.RemoveMechanism(part);
-            }
-            else
-            {
-                shell.WriteError("Was not a mechanism, or did not have a parent.");
-            }
+            var xformSystem = _entManager.System<SharedTransformSystem>();
+            xformSystem.AttachToGridOrMap(entityUid.Value);
+            shell.WriteLine($"Removed organ {_entManager.ToPrettyString(entityUid.Value)}");
         }
     }
 }

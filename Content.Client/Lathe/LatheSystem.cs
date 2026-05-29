@@ -2,55 +2,64 @@ using Robust.Client.GameObjects;
 using Content.Shared.Lathe;
 using Content.Shared.Power;
 using Content.Client.Power;
-using Content.Client.Wires.Visualizers;
-using Content.Shared.Wires;
+using Content.Shared.Research.Prototypes;
 
-namespace Content.Client.Lathe
+namespace Content.Client.Lathe;
+
+public sealed partial class LatheSystem : SharedLatheSystem
 {
-    public sealed class LatheSystem : VisualizerSystem<LatheVisualsComponent>
+    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    [Dependency] private SpriteSystem _sprite = default!;
+
+    public override void Initialize()
     {
-        protected override void OnAppearanceChange(EntityUid uid, LatheVisualsComponent component, ref AppearanceChangeEvent args)
+        base.Initialize();
+
+        SubscribeLocalEvent<LatheComponent, AppearanceChangeEvent>(OnAppearanceChange);
+    }
+
+    private void OnAppearanceChange(EntityUid uid, LatheComponent component, ref AppearanceChangeEvent args)
+    {
+        if (args.Sprite == null)
+            return;
+
+        // Lathe specific stuff
+        if (_appearance.TryGetData<bool>(uid, LatheVisuals.IsRunning, out var isRunning, args.Component))
         {
-            if (args.Sprite == null)
-                return;
-
-            if (args.Component.TryGetData(PowerDeviceVisuals.Powered, out bool powered) &&
-                args.Sprite.LayerMapTryGet(PowerDeviceVisualLayers.Powered, out _))
-            {
-                args.Sprite.LayerSetVisible(PowerDeviceVisualLayers.Powered, powered);
-            }
-
-            if (args.Component.TryGetData(WiresVisuals.MaintenancePanelState, out bool panel)
-                && args.Sprite.LayerMapTryGet(WiresVisualizer.WiresVisualLayers.MaintenancePanel, out _))
-            {
-                args.Sprite.LayerSetVisible(WiresVisualizer.WiresVisualLayers.MaintenancePanel, panel);
-            }
-
-            // Lathe specific stuff
-            if (args.Component.TryGetData(LatheVisuals.IsRunning, out bool isRunning))
+            if (_sprite.LayerMapTryGet((uid, args.Sprite), LatheVisualLayers.IsRunning, out var runningLayer, false) &&
+                component.RunningState != null &&
+                component.IdleState != null)
             {
                 var state = isRunning ? component.RunningState : component.IdleState;
-                args.Sprite.LayerSetAnimationTime(LatheVisualLayers.IsRunning, 0f);
-                args.Sprite.LayerSetState(LatheVisualLayers.IsRunning, state);
+                _sprite.LayerSetRsiState((uid, args.Sprite), runningLayer, state);
             }
+        }
 
-            if (args.Component.TryGetData(LatheVisuals.IsInserting, out bool isInserting)
-                && args.Sprite.LayerMapTryGet(LatheVisualLayers.IsInserting, out var isInsertingLayer))
+        if (_appearance.TryGetData<bool>(uid, PowerDeviceVisuals.Powered, out var powered, args.Component) &&
+            _sprite.LayerMapTryGet((uid, args.Sprite), PowerDeviceVisualLayers.Powered, out var powerLayer, false))
+        {
+            _sprite.LayerSetVisible((uid, args.Sprite), powerLayer, powered);
+
+            if (component.UnlitIdleState != null &&
+                component.UnlitRunningState != null)
             {
-                if (args.Component.TryGetData(LatheVisuals.InsertingColor, out Color color)
-                    && !component.IgnoreColor)
-                {
-                    args.Sprite.LayerSetColor(isInsertingLayer, color);
-                }
-
-                args.Sprite.LayerSetAnimationTime(isInsertingLayer, 0f);
-                args.Sprite.LayerSetVisible(isInsertingLayer, isInserting);
+                var state = isRunning ? component.UnlitRunningState : component.UnlitIdleState;
+                _sprite.LayerSetRsiState((uid, args.Sprite), powerLayer, state);
             }
         }
     }
+
+    ///<remarks>
+    /// Whether or not a recipe is available is not really visible to the client,
+    /// so it just defaults to true.
+    ///</remarks>
+    protected override bool HasRecipe(EntityUid uid, LatheRecipePrototype recipe, LatheComponent component)
+    {
+        return true;
+    }
 }
+
 public enum LatheVisualLayers : byte
 {
-    IsRunning,
-    IsInserting
+    IsRunning
 }

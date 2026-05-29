@@ -7,12 +7,12 @@ using JetBrains.Annotations;
 namespace Content.Server.Administration.UI
 {
     [UsedImplicitly]
-    public sealed class SetOutfitEui : BaseEui
+    public sealed partial class SetOutfitEui : BaseEui
     {
-        [Dependency] private readonly IAdminManager _adminManager = default!;
-        private readonly EntityUid _target;
+        [Dependency] private IAdminManager _adminManager = default!;
+        private readonly NetEntity _target;
 
-        public SetOutfitEui(EntityUid entity)
+        public SetOutfitEui(NetEntity entity)
         {
             _target = entity;
             IoCManager.InjectDependencies(this);
@@ -30,7 +30,7 @@ namespace Content.Server.Administration.UI
         {
             return new SetOutfitEuiState
             {
-                TargetEntityId = _target
+                TargetNetEntity = _target,
             };
         }
 

@@ -1,11 +1,14 @@
 using Content.Server.DeviceNetwork.Components;
+using Content.Shared.DeviceNetwork.Events;
 using JetBrains.Annotations;
 
 namespace Content.Server.DeviceNetwork.Systems
 {
     [UsedImplicitly]
-    public sealed class WirelessNetworkSystem : EntitySystem
+    public sealed partial class WirelessNetworkSystem : EntitySystem
     {
+        [Dependency] private SharedTransformSystem _transformSystem = default!;
+
         public override void Initialize()
         {
             base.Initialize();
@@ -20,9 +23,12 @@ namespace Content.Server.DeviceNetwork.Systems
             var ownPosition = args.SenderPosition;
             var xform = Transform(uid);
 
+            // not a wireless to wireless connection, just let it happen
+            if (!TryComp<WirelessNetworkComponent>(args.Sender, out var sendingComponent))
+                return;
+
             if (xform.MapID != args.SenderTransform.MapID
-                || !TryComp<WirelessNetworkComponent?>(args.Sender, out var sendingComponent)
-                || (ownPosition - xform.WorldPosition).Length > sendingComponent.Range)
+                || (ownPosition - _transformSystem.GetWorldPosition(xform)).Length() > sendingComponent.Range)
             {
                 args.Cancel();
             }

@@ -1,247 +1,256 @@
+using System.Numerics;
 using Content.Shared.Examine;
-using Content.Shared.Hands.Components;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Interaction;
+using Content.Shared.Nutrition;
 using Content.Shared.Popups;
+using Content.Shared.Storage.EntitySystems;
+using Content.Shared.Verbs;
 using JetBrains.Annotations;
 using Robust.Shared.GameStates;
-using Robust.Shared.Player;
+using Robust.Shared.Physics.Systems;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 
-namespace Content.Shared.Stacks
+namespace Content.Shared.Stacks;
+
+// Partial for general system code and event handlers.
+/// <summary>
+/// System for handling entities which represent a stack of identical items, usually materials.
+/// </summary>
+[UsedImplicitly]
+public abstract partial class SharedStackSystem : EntitySystem
 {
-    [UsedImplicitly]
-    public abstract class SharedStackSystem : EntitySystem
+    [Dependency] private IPrototypeManager _prototype = default!;
+    [Dependency] private IViewVariablesManager _vvm = default!;
+    [Dependency] protected SharedAppearanceSystem Appearance = default!;
+    [Dependency] protected SharedHandsSystem Hands = default!;
+    [Dependency] protected SharedTransformSystem Xform = default!;
+    [Dependency] private EntityLookupSystem _entityLookup = default!;
+    [Dependency] private SharedPhysicsSystem _physics = default!;
+    [Dependency] protected SharedPopupSystem Popup = default!;
+    [Dependency] private SharedStorageSystem _storage = default!;
+
+    // TODO: These should be in the prototype.
+    public static readonly int[] DefaultSplitAmounts = { 1, 5, 10, 20, 30, 50 };
+
+    public override void Initialize()
     {
-        [Dependency] protected readonly SharedPopupSystem PopupSystem = default!;
-        [Dependency] protected readonly SharedHandsSystem HandsSystem = default!;
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
+        base.Initialize();
 
-        public override void Initialize()
+        SubscribeLocalEvent<StackComponent, InteractUsingEvent>(OnStackInteractUsing);
+        SubscribeLocalEvent<StackComponent, ComponentGetState>(OnStackGetState);
+        SubscribeLocalEvent<StackComponent, ComponentHandleState>(OnStackHandleState);
+        SubscribeLocalEvent<StackComponent, ComponentStartup>(OnStackStarted);
+        SubscribeLocalEvent<StackComponent, ExaminedEvent>(OnStackExamined);
+
+        SubscribeLocalEvent<StackComponent, BeforeIngestedEvent>(OnBeforeEaten);
+        SubscribeLocalEvent<StackComponent, IngestedEvent>(OnEaten);
+        SubscribeLocalEvent<StackComponent, GetVerbsEvent<AlternativeVerb>>(OnStackAlternativeInteract);
+
+        _vvm.GetTypeHandler<StackComponent>()
+            .AddPath(nameof(StackComponent.Count), (_, comp) => comp.Count, SetCount);
+    }
+
+    public override void Shutdown()
+    {
+        base.Shutdown();
+
+        _vvm.GetTypeHandler<StackComponent>()
+            .RemovePath(nameof(StackComponent.Count));
+    }
+
+    private void OnStackInteractUsing(Entity<StackComponent> ent, ref InteractUsingEvent args)
+    {
+        if (args.Handled)
+            return;
+
+        if (!TryComp<StackComponent>(args.Used, out var recipientStack))
+            return;
+
+        // Transfer stacks from ground to hand
+        if (!TryMergeStacks((ent.Owner, ent.Comp), (args.Used, recipientStack), out var transferred))
+            return; // if nothing transferred, leave without a pop-up
+
+        args.Handled = true;
+
+        // interaction is done, the rest is just generating a pop-up
+
+        var popupPos = args.ClickLocation;
+        var userCoords = Transform(args.User).Coordinates;
+
+        if (!popupPos.IsValid(EntityManager))
         {
-            base.Initialize();
-
-            SubscribeLocalEvent<SharedStackComponent, ComponentGetState>(OnStackGetState);
-            SubscribeLocalEvent<SharedStackComponent, ComponentHandleState>(OnStackHandleState);
-            SubscribeLocalEvent<SharedStackComponent, ComponentStartup>(OnStackStarted);
-            SubscribeLocalEvent<SharedStackComponent, ExaminedEvent>(OnStackExamined);
-            SubscribeLocalEvent<SharedStackComponent, InteractUsingEvent>(OnStackInteractUsing);
+            popupPos = userCoords;
         }
 
-        private void OnStackInteractUsing(EntityUid uid, SharedStackComponent stack, InteractUsingEvent args)
+        switch (transferred)
         {
-            if (args.Handled)
-                return;
+            case > 0:
+                Popup.PopupClient($"+{transferred}", popupPos, args.User);
 
-            if (!TryComp(args.Used, out SharedStackComponent? recipientStack))
-                return;
+                if (GetAvailableSpace(recipientStack) == 0)
+                {
+                    Popup.PopupClient(Loc.GetString("comp-stack-becomes-full"),
+                        popupPos.Offset(new Vector2(0, -0.5f)),
+                        args.User);
+                }
 
-            if (!TryMergeStacks(uid, args.Used, out var transfered, stack, recipientStack))
-                return;
+                break;
 
-            args.Handled = true;
+            case 0 when GetAvailableSpace(recipientStack) == 0:
+                Popup.PopupClient(Loc.GetString("comp-stack-already-full"), popupPos, args.User);
+                break;
+        }
 
-            // interaction is done, the rest is just generating a pop-up
+        var localRotation = Transform(args.Used).LocalRotation;
+        _storage.PlayPickupAnimation(args.Used, popupPos, userCoords, localRotation, args.User);
+    }
 
-            if (!_gameTiming.IsFirstTimePredicted)
-                return;
+    private void OnStackStarted(Entity<StackComponent> ent, ref ComponentStartup args)
+    {
+        if (!TryComp(ent.Owner, out AppearanceComponent? appearance))
+            return;
 
-            var popupPos = args.ClickLocation;
+        Appearance.SetData(ent.Owner, StackVisuals.Actual, ent.Comp.Count, appearance);
+        Appearance.SetData(ent.Owner, StackVisuals.MaxCount, GetMaxCount(ent.Comp), appearance);
+        Appearance.SetData(ent.Owner, StackVisuals.Hide, false, appearance);
+    }
 
-            if (!popupPos.IsValid(EntityManager))
+    private void OnStackGetState(Entity<StackComponent> ent, ref ComponentGetState args)
+    {
+        args.State = new StackComponentState(ent.Comp.Count, ent.Comp.MaxCountOverride, ent.Comp.Unlimited);
+    }
+
+    private void OnStackHandleState(Entity<StackComponent> ent, ref ComponentHandleState args)
+    {
+        if (args.Current is not StackComponentState cast)
+            return;
+
+        ent.Comp.MaxCountOverride = cast.MaxCountOverride;
+        ent.Comp.Unlimited = cast.Unlimited;
+        // This will change the count and call events.
+        SetCount(ent.AsNullable(), cast.Count);
+    }
+
+    private void OnStackExamined(Entity<StackComponent> ent, ref ExaminedEvent args)
+    {
+        if (!args.IsInDetailsRange)
+            return;
+
+        args.PushMarkup(
+            Loc.GetString("comp-stack-examine-detail-count",
+                ("count", ent.Comp.Count),
+                ("markupCountColor", "lightgray")
+            )
+        );
+    }
+
+    private void OnBeforeEaten(Entity<StackComponent> eaten, ref BeforeIngestedEvent args)
+    {
+        if (args.Cancelled)
+            return;
+
+        if (args.Solution is not { } sol)
+            return;
+
+        // If the entity is empty and is a lingering entity we can't eat from it.
+        if (eaten.Comp.Count <= 0)
+        {
+            args.Cancelled = true;
+            return;
+        }
+
+        // If we've made it this far, we should refresh the solution when this item is eaten provided it's not the last one in the stack!
+        args.Refresh = eaten.Comp.Count > 1;
+
+        /*
+        Edible stacked items is near completely evil so we must choose one of the following:
+        - Option 1: Eat the entire solution each bite and reduce the stack by 1.
+        - Option 2: Multiply the solution eaten by the stack size.
+        - Option 3: Divide the solution consumed by stack size.
+        The easiest and safest option is and always will be Option 1 otherwise we risk reagent deletion or duplication.
+        That is why we cancel if we cannot set the minimum to the entire volume of the solution.
+        */
+        if (args.TryNewMinimum(sol.Volume))
+            return;
+
+        args.Cancelled = true;
+    }
+
+    private void OnEaten(Entity<StackComponent> eaten, ref IngestedEvent args)
+    {
+        ReduceCount(eaten.AsNullable(), 1);
+    }
+
+    private void OnStackAlternativeInteract(Entity<StackComponent> ent, ref GetVerbsEvent<AlternativeVerb> args)
+    {
+        if (!args.CanAccess || !args.CanInteract || args.Hands == null || ent.Comp.Count == 1)
+            return;
+
+        var user = args.User; // Can't pass ref events into verbs
+
+        AlternativeVerb halve = new()
+        {
+            Text = Loc.GetString("comp-stack-split-halve"),
+            Category = VerbCategory.Split,
+            Act = () => UserSplit(ent, user, ent.Comp.Count / 2),
+            Priority = 1
+        };
+        args.Verbs.Add(halve);
+
+        var priority = 0;
+        foreach (var amount in DefaultSplitAmounts)
+        {
+            if (amount >= ent.Comp.Count)
+                continue;
+
+            AlternativeVerb verb = new()
             {
-                popupPos = Transform(args.User).Coordinates;
-            }
+                Text = amount.ToString(),
+                Category = VerbCategory.Split,
+                Act = () => UserSplit(ent, user, amount),
+                // we want to sort by size, not alphabetically by the verb text.
+                Priority = priority
+            };
 
-            switch (transfered)
-            {
-                case > 0:
-                    PopupSystem.PopupCoordinates($"+{transfered}", popupPos, Filter.Local());
+            priority--;
 
-                    if (recipientStack.AvailableSpace == 0)
-                    {
-                        PopupSystem.PopupCoordinates(Loc.GetString("comp-stack-becomes-full"),
-                            popupPos.Offset(new Vector2(0, -0.5f)), Filter.Local());
-                    }
-
-                    break;
-
-                case 0 when recipientStack.AvailableSpace == 0:
-                    PopupSystem.PopupCoordinates(Loc.GetString("comp-stack-already-full"), popupPos, Filter.Local());
-                    break;
-            }
-        }
-
-        private bool TryMergeStacks(
-            EntityUid donor,
-            EntityUid recipient,
-            out int transfered,
-            SharedStackComponent? donorStack = null,
-            SharedStackComponent? recipientStack = null)
-        {
-            transfered = 0;
-            if (!Resolve(recipient, ref recipientStack, false) || !Resolve(donor, ref donorStack, false))
-                return false;
-
-            if (!recipientStack.StackTypeId.Equals(donorStack.StackTypeId))
-                return false;
-
-            transfered = Math.Min(donorStack.Count, recipientStack.AvailableSpace);
-            SetCount(donor, donorStack.Count - transfered, donorStack);
-            SetCount(recipient, recipientStack.Count + transfered, recipientStack);
-            return true;
-        }
-
-        /// <summary>
-        ///     If the given item is a stack, this attempts to find a matching stack in the users hand, and merge with that.
-        /// </summary>
-        /// <remarks>
-        ///     If the interaction fails to fully merge the stack, or if this is just not a stack, it will instead try
-        ///     to place it in the user's hand normally.
-        /// </remarks>
-        public void TryMergeToHands(
-            EntityUid item,
-            EntityUid user,
-            SharedStackComponent? itemStack = null,
-            SharedHandsComponent? hands = null)
-        {
-            if (!Resolve(user, ref hands, false))
-                return;
-
-            if (!Resolve(item, ref itemStack, false))
-            {
-                // This isn't even a stack. Just try to pickup as normal.
-                HandsSystem.PickupOrDrop(user, item, handsComp: hands);
-                return;
-            }
-
-            // This is shit code until hands get fixed and give an easy way to enumerate over items, starting with the currently active item.
-            foreach (var held in HandsSystem.EnumerateHeld(user, hands))
-            {
-                TryMergeStacks(item, held, out _, donorStack: itemStack);
-
-                if (itemStack.Count == 0)
-                    return;
-            }
-
-            HandsSystem.PickupOrDrop(user, item, handsComp: hands);
-        }
-
-        public virtual void SetCount(EntityUid uid, int amount, SharedStackComponent? component = null)
-        {
-            if (!Resolve(uid, ref component))
-                return;
-
-            // Do nothing if amount is already the same.
-            if (amount == component.Count)
-                return;
-
-            // Store old value for event-raising purposes...
-            var old = component.Count;
-
-            // Clamp the value.
-            if (amount > component.MaxCount)
-            {
-                amount = component.MaxCount;
-            }
-
-            if (amount < 0)
-            {
-                amount = 0;
-            }
-
-            component.Count = amount;
-            Dirty(component);
-
-            // Change appearance data.
-            if (TryComp(uid, out AppearanceComponent? appearance))
-                appearance.SetData(StackVisuals.Actual, component.Count);
-
-            RaiseLocalEvent(uid, new StackCountChangedEvent(old, component.Count), false);
-        }
-
-        /// <summary>
-        ///     Try to use an amount of items on this stack. Returns whether this succeeded.
-        /// </summary>
-        public bool Use(EntityUid uid, int amount, SharedStackComponent? stack = null)
-        {
-            if (!Resolve(uid, ref stack))
-                return false;
-
-            // Check if we have enough things in the stack for this...
-            if (stack.Count < amount)
-            {
-                // Not enough things in the stack, return false.
-                return false;
-            }
-
-            // We do have enough things in the stack, so remove them and change.
-            if (!stack.Unlimited)
-            {
-                SetCount(uid, stack.Count - amount, stack);
-            }
-
-            return true;
-        }
-
-        private void OnStackStarted(EntityUid uid, SharedStackComponent component, ComponentStartup args)
-        {
-            if (!TryComp(uid, out AppearanceComponent? appearance))
-                return;
-
-            appearance.SetData(StackVisuals.Actual, component.Count);
-            appearance.SetData(StackVisuals.MaxCount, component.MaxCount);
-            appearance.SetData(StackVisuals.Hide, false);
-        }
-
-        private void OnStackGetState(EntityUid uid, SharedStackComponent component, ref ComponentGetState args)
-        {
-            args.State = new StackComponentState(component.Count, component.MaxCount);
-        }
-
-        private void OnStackHandleState(EntityUid uid, SharedStackComponent component, ref ComponentHandleState args)
-        {
-            if (args.Current is not StackComponentState cast)
-                return;
-
-            component.MaxCount = cast.MaxCount;
-            // This will change the count and call events.
-            SetCount(uid, cast.Count, component);
-        }
-
-        private void OnStackExamined(EntityUid uid, SharedStackComponent component, ExaminedEvent args)
-        {
-            if (!args.IsInDetailsRange)
-                return;
-
-            args.PushMarkup(
-                Loc.GetString("comp-stack-examine-detail-count",
-                    ("count", component.Count),
-                    ("markupCountColor", "lightgray")
-                )
-            );
+            args.Verbs.Add(verb);
         }
     }
 
-    /// <summary>
-    ///     Event raised when a stack's count has changed.
-    /// </summary>
-    public sealed class StackCountChangedEvent : EntityEventArgs
+    /// <remarks>
+    ///     OnStackAlternativeInteract() was moved to shared in order to faciliate prediction of stack splitting verbs.
+    ///     However, prediction of interacitons with spawned entities is non-functional (or so i'm told)
+    ///     So, UserSplit() and Split() should remain on the server for the time being.
+    ///     This empty virtual method allows for UserSplit() to be called on the server from the client.
+    ///     When prediction is improved, those two methods should be moved to shared, in order to predict the splitting itself (not just the verbs)
+    /// </remarks>
+    protected virtual void UserSplit(Entity<StackComponent> stack, Entity<TransformComponent?> user, int amount)
     {
-        /// <summary>
-        ///     The old stack count.
-        /// </summary>
-        public int OldCount { get; }
 
-        /// <summary>
-        ///     The new stack count.
-        /// </summary>
-        public int NewCount { get; }
+    }
+}
 
-        public StackCountChangedEvent(int oldCount, int newCount)
-        {
-            OldCount = oldCount;
-            NewCount = newCount;
-        }
+/// <summary>
+/// Event raised when a stack's count has changed.
+/// </summary>
+public sealed class StackCountChangedEvent : EntityEventArgs
+{
+    /// <summary>
+    /// The old stack count.
+    /// </summary>
+    public int OldCount;
+
+    /// <summary>
+    /// The new stack count.
+    /// </summary>
+    public int NewCount;
+
+    public StackCountChangedEvent(int oldCount, int newCount)
+    {
+        OldCount = oldCount;
+        NewCount = newCount;
     }
 }

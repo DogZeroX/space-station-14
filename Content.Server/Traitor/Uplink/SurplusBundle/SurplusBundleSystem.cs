@@ -1,74 +1,69 @@
 using System.Linq;
-using Content.Server.Storage.Components;
-using Content.Shared.PDA;
-using Robust.Shared.Prototypes;
+using Content.Server.Storage.EntitySystems;
+using Content.Server.Store.Systems;
+using Content.Shared.FixedPoint;
+using Content.Shared.Store;
+using Content.Shared.Store.Components;
 using Robust.Shared.Random;
 
 namespace Content.Server.Traitor.Uplink.SurplusBundle;
 
-public sealed class SurplusBundleSystem : EntitySystem
+public sealed partial class SurplusBundleSystem : EntitySystem
 {
-    [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
-    [Dependency] private readonly IRobustRandom _random = default!;
-
-    private UplinkStoreListingPrototype[] _uplinks = default!;
+    [Dependency] private IRobustRandom _random = default!;
+    [Dependency] private EntityStorageSystem _entityStorage = default!;
+    [Dependency] private StoreSystem _store = default!;
 
     public override void Initialize()
     {
         base.Initialize();
+
         SubscribeLocalEvent<SurplusBundleComponent, MapInitEvent>(OnMapInit);
-
-        InitList();
-    }
-
-    private void InitList()
-    {
-        // sort data in price descending order
-        _uplinks = _prototypeManager.EnumeratePrototypes<UplinkStoreListingPrototype>()
-            .Where(item => item.CanSurplus).ToArray();
-        Array.Sort(_uplinks, (a, b) => b.Price - a.Price);
     }
 
     private void OnMapInit(EntityUid uid, SurplusBundleComponent component, MapInitEvent args)
     {
-        FillStorage(uid, component: component);
-    }
-
-    private void FillStorage(EntityUid uid, IStorageComponent? storage = null,
-        SurplusBundleComponent? component = null)
-    {
-        if (!Resolve(uid, ref storage, ref component))
+        if (!TryComp<StoreComponent>(uid, out var store))
             return;
 
-        var cords = Transform(uid).Coordinates;
+        FillStorage((uid, component, store));
+    }
 
-        var content = GetRandomContent(component.TotalPrice);
+    private void FillStorage(Entity<SurplusBundleComponent, StoreComponent> ent)
+    {
+        var cords = Transform(ent).Coordinates;
+        var content = GetRandomContent(ent);
         foreach (var item in content)
         {
-            var ent = EntityManager.SpawnEntity(item.ItemId, cords);
-            storage.Insert(ent);
+            var dode = Spawn(item.ProductEntity, cords);
+            _entityStorage.Insert(dode, ent);
         }
     }
 
     // wow, is this leetcode reference?
-    private List<UplinkStoreListingPrototype> GetRandomContent(int targetCost)
+    private List<ListingData> GetRandomContent(Entity<SurplusBundleComponent, StoreComponent> ent)
     {
-        var ret = new List<UplinkStoreListingPrototype>();
-        if (_uplinks.Length == 0)
+        var ret = new List<ListingData>();
+
+        var listings = _store.GetAvailableListings(ent, null, ent.Comp2.Categories)
+            .OrderBy(p => p.Cost.Values.Sum())
+            .ToList();
+
+        if (listings.Count == 0)
             return ret;
 
-        var totalCost = 0;
+        var totalCost = FixedPoint2.Zero;
         var index = 0;
-        while (totalCost < targetCost)
+        while (totalCost < ent.Comp1.TotalPrice)
         {
             // All data is sorted in price descending order
             // Find new item with the lowest acceptable price
             // All expansive items will be before index, all acceptable after
-            var remainingBudget = targetCost - totalCost;
-            while (_uplinks[index].Price > remainingBudget)
+            var remainingBudget = ent.Comp1.TotalPrice - totalCost;
+            while (listings[index].Cost.Values.Sum() > remainingBudget)
             {
                 index++;
-                if (index >= _uplinks.Length)
+                if (index >= listings.Count)
                 {
                     // Looks like no cheap items left
                     // It shouldn't be case for ss14 content
@@ -78,10 +73,10 @@ public sealed class SurplusBundleSystem : EntitySystem
             }
 
             // Select random listing and add into crate
-            var randomIndex = _random.Next(index, _uplinks.Length);
-            var randomItem = _uplinks[randomIndex];
+            var randomIndex = _random.Next(index, listings.Count);
+            var randomItem = listings[randomIndex];
             ret.Add(randomItem);
-            totalCost += randomItem.Price;
+            totalCost += randomItem.Cost.Values.Sum();
         }
 
         return ret;

@@ -1,37 +1,40 @@
 using Content.Server.Atmos.EntitySystems;
 using Content.Shared.Atmos;
+using Content.Shared.Atmos.Reactions;
 using JetBrains.Annotations;
 
 namespace Content.Server.Atmos.Reactions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class TritiumFireReaction : IGasReactionEffect
+    public sealed partial class TritiumFireReaction : IGasReactionEffect
     {
-        public ReactionResult React(GasMixture mixture, IGasMixtureHolder? holder, AtmosphereSystem atmosphereSystem)
+        public ReactionResult React(GasMixture mixture, IGasMixtureHolder? holder, AtmosphereSystem atmosphereSystem, float heatScale)
         {
             var energyReleased = 0f;
-            var oldHeatCapacity = atmosphereSystem.GetHeatCapacity(mixture);
+            var oldHeatCapacity = atmosphereSystem.GetHeatCapacity(mixture, true);
             var temperature = mixture.Temperature;
             var location = holder as TileAtmosphere;
-            mixture.ReactionResults[GasReaction.Fire] = 0f;
+            mixture.ReactionResults[(byte)GasReaction.Fire] = 0f;
             var burnedFuel = 0f;
             var initialTrit = mixture.GetMoles(Gas.Tritium);
 
             if (mixture.GetMoles(Gas.Oxygen) < initialTrit ||
-                Atmospherics.MinimumTritiumOxyburnEnergy > (temperature * oldHeatCapacity))
+                Atmospherics.MinimumTritiumOxyburnEnergy > (temperature * oldHeatCapacity * heatScale))
             {
                 burnedFuel = mixture.GetMoles(Gas.Oxygen) / Atmospherics.TritiumBurnOxyFactor;
                 if (burnedFuel > initialTrit)
                     burnedFuel = initialTrit;
 
                 mixture.AdjustMoles(Gas.Tritium, -burnedFuel);
+                mixture.AdjustMoles(Gas.Oxygen, -burnedFuel / Atmospherics.TritiumBurnFuelRatio);
             }
             else
             {
-                burnedFuel = initialTrit;
-                mixture.SetMoles(Gas.Tritium, mixture.GetMoles(Gas.Tritium ) * (1 - 1 / Atmospherics.TritiumBurnTritFactor));
-                mixture.AdjustMoles(Gas.Oxygen, -mixture.GetMoles(Gas.Tritium));
+                // Limit the amount of fuel burned by the limiting reactant, either our initial tritium or the amount of oxygen available given the burn ratio.
+                burnedFuel = Math.Min(initialTrit, mixture.GetMoles(Gas.Oxygen) / Atmospherics.TritiumBurnFuelRatio) / Atmospherics.TritiumBurnTritFactor;
+                mixture.AdjustMoles(Gas.Tritium, -burnedFuel);
+                mixture.AdjustMoles(Gas.Oxygen, -burnedFuel / Atmospherics.TritiumBurnFuelRatio);
                 energyReleased += (Atmospherics.FireHydrogenEnergyReleased * burnedFuel * (Atmospherics.TritiumBurnTritFactor - 1));
             }
 
@@ -44,12 +47,13 @@ namespace Content.Server.Atmos.Reactions
                 // Conservation of mass is important.
                 mixture.AdjustMoles(Gas.WaterVapor, burnedFuel);
 
-                mixture.ReactionResults[GasReaction.Fire] += burnedFuel;
+                mixture.ReactionResults[(byte)GasReaction.Fire] += burnedFuel;
             }
 
+            energyReleased /= heatScale; // adjust energy to make sure speedup doesn't cause mega temperature rise
             if (energyReleased > 0)
             {
-                var newHeatCapacity = atmosphereSystem.GetHeatCapacity(mixture);
+                var newHeatCapacity = atmosphereSystem.GetHeatCapacity(mixture, true);
                 if (newHeatCapacity > Atmospherics.MinimumHeatCapacity)
                     mixture.Temperature = ((temperature * oldHeatCapacity + energyReleased) / newHeatCapacity);
             }
@@ -59,11 +63,11 @@ namespace Content.Server.Atmos.Reactions
                 temperature = mixture.Temperature;
                 if (temperature > Atmospherics.FireMinimumTemperatureToExist)
                 {
-                    atmosphereSystem.HotspotExpose(location.GridIndex, location.GridIndices, temperature, mixture.Volume);
+                    atmosphereSystem.HotspotExpose(location, temperature, mixture.Volume);
                 }
             }
 
-            return mixture.ReactionResults[GasReaction.Fire] != 0 ? ReactionResult.Reacting : ReactionResult.NoReaction;
+            return mixture.ReactionResults[(byte)GasReaction.Fire] != 0 ? ReactionResult.Reacting : ReactionResult.NoReaction;
         }
     }
 }

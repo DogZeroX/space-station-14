@@ -1,23 +1,64 @@
+using Content.Server.Administration.Logs;
+using Content.Server.Cargo.Systems;
 using Content.Server.Storage.Components;
+using Content.Shared.Cargo;
+using Content.Shared.Database;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Interaction.Events;
-using Content.Shared.Storage;
-using Robust.Shared.Audio;
-using Robust.Shared.Player;
+using Robust.Shared.Audio.Systems;
+using Robust.Shared.Map;
 using Robust.Shared.Random;
+using static Content.Shared.Storage.EntitySpawnCollection;
 
 namespace Content.Server.Storage.EntitySystems
 {
-    public sealed class SpawnItemsOnUseSystem : EntitySystem
+    public sealed partial class SpawnItemsOnUseSystem : EntitySystem
     {
-        [Dependency] private readonly IRobustRandom _random = default!;
-        [Dependency] private readonly SharedHandsSystem _handsSystem = default!;
+        [Dependency] private IRobustRandom _random = default!;
+        [Dependency] private IAdminLogManager _adminLogger = default!;
+        [Dependency] private SharedHandsSystem _hands = default!;
+        [Dependency] private PricingSystem _pricing = default!;
+        [Dependency] private SharedAudioSystem _audio = default!;
+        [Dependency] private SharedTransformSystem _transform = default!;
 
         public override void Initialize()
         {
             base.Initialize();
 
             SubscribeLocalEvent<SpawnItemsOnUseComponent, UseInHandEvent>(OnUseInHand);
+            SubscribeLocalEvent<SpawnItemsOnUseComponent, PriceCalculationEvent>(CalculatePrice, before: new[] { typeof(PricingSystem) });
+        }
+
+        private void CalculatePrice(EntityUid uid, SpawnItemsOnUseComponent component, ref PriceCalculationEvent args)
+        {
+            var ungrouped = CollectOrGroups(component.Items, out var orGroups);
+
+            foreach (var entry in ungrouped)
+            {
+                var protUid = Spawn(entry.PrototypeId, MapCoordinates.Nullspace);
+
+                // Calculate the average price of the possible spawned items
+                args.Price += _pricing.GetPrice(protUid) * entry.SpawnProbability * entry.GetAmount(getAverage: true);
+
+                Del(protUid);
+            }
+
+            foreach (var group in orGroups)
+            {
+                foreach (var entry in group.Entries)
+                {
+                    var protUid = Spawn(entry.PrototypeId, MapCoordinates.Nullspace);
+
+                    // Calculate the average price of the possible spawned items
+                    args.Price += _pricing.GetPrice(protUid) *
+                                  (entry.SpawnProbability / group.CumulativeProbability) *
+                                  entry.GetAmount(getAverage: true);
+
+                    Del(protUid);
+                }
+            }
+
+            args.Handled = true;
         }
 
         private void OnUseInHand(EntityUid uid, SpawnItemsOnUseComponent component, UseInHandEvent args)
@@ -25,29 +66,39 @@ namespace Content.Server.Storage.EntitySystems
             if (args.Handled)
                 return;
 
+            // If starting with zero or less uses, this component is a no-op
+            if (component.Uses <= 0)
+                return;
+
             var coords = Transform(args.User).Coordinates;
-            var spawnEntities = EntitySpawnCollection.GetSpawns(component.Items, _random);
+            var spawnEntities = GetSpawns(component.Items, _random);
             EntityUid? entityToPlaceInHands = null;
 
             foreach (var proto in spawnEntities)
             {
                 entityToPlaceInHands = Spawn(proto, coords);
+                _adminLogger.Add(LogType.EntitySpawn, LogImpact.Low, $"{ToPrettyString(args.User)} used {ToPrettyString(uid)} which spawned {ToPrettyString(entityToPlaceInHands.Value)}");
             }
 
+            // The entity is often deleted, so play the sound at its position rather than parenting
             if (component.Sound != null)
-                SoundSystem.Play(Filter.Pvs(uid), component.Sound.GetSound(), uid);
+                _audio.PlayPvs(component.Sound, coords);
 
             component.Uses--;
-            if (component.Uses == 0)
+
+            // Delete entity only if component was successfully used
+            if (component.Uses <= 0)
             {
-                args.Handled = true;
-                EntityManager.DeleteEntity(uid);
+                // Don't delete the entity in the event bus, so we queue it for deletion.
+                // We need the free hand for the new item, so we send it to nullspace.
+                _transform.DetachEntity(uid, Transform(uid));
+                QueueDel(uid);
             }
 
             if (entityToPlaceInHands != null)
-            {
-                _handsSystem.PickupOrDrop(args.User, entityToPlaceInHands.Value);
-            }
+                _hands.PickupOrDrop(args.User, entityToPlaceInHands.Value);
+
+            args.Handled = true;
         }
     }
 }

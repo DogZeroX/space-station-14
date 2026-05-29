@@ -1,20 +1,29 @@
 using System;
 using Robust.Client;
 using Robust.Client.UserInterface;
+using Robust.Shared.Configuration;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Network;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Random;
 
 namespace Content.Client.Launcher
 {
-    public sealed class LauncherConnecting : Robust.Client.State.State
+    public sealed partial class LauncherConnecting : Robust.Client.State.State
     {
-        [Dependency] private readonly IUserInterfaceManager _userInterfaceManager = default!;
-        [Dependency] private readonly IClientNetManager _clientNetManager = default!;
-        [Dependency] private readonly IGameController _gameController = default!;
-        [Dependency] private readonly IBaseClient _baseClient = default!;
+        [Dependency] private IUserInterfaceManager _userInterfaceManager = default!;
+        [Dependency] private IClientNetManager _clientNetManager = default!;
+        [Dependency] private IGameController _gameController = default!;
+        [Dependency] private IBaseClient _baseClient = default!;
+        [Dependency] private IRobustRandom _random = default!;
+        [Dependency] private IPrototypeManager _prototypeManager = default!;
+        [Dependency] private IConfigurationManager _cfg = default!;
+        [Dependency] private IClipboardManager _clipboard = default!;
+        [Dependency] private ILogManager _logManager = default!;
 
         private LauncherConnectingGui? _control;
+        private ISawmill _sawmill = default!;
 
         private Page _currentPage;
         private string? _connectFailReason;
@@ -48,10 +57,13 @@ namespace Content.Client.Launcher
         public event Action<Page>? PageChanged;
         public event Action<string?>? ConnectFailReasonChanged;
         public event Action<ClientConnectionState>? ConnectionStateChanged;
+        public event Action<NetConnectFailArgs>? ConnectFailed;
 
-        public override void Startup()
+        protected override void Startup()
         {
-            _control = new LauncherConnectingGui(this);
+            _control = new LauncherConnectingGui(this, _random, _prototypeManager, _cfg, _clipboard);
+
+            _sawmill = _logManager.GetSawmill("launcher-ui");
 
             _userInterfaceManager.StateRoot.AddChild(_control);
 
@@ -61,7 +73,7 @@ namespace Content.Client.Launcher
             CurrentPage = Page.Connecting;
         }
 
-        public override void Shutdown()
+        protected override void Shutdown()
         {
             _control?.Dispose();
 
@@ -79,6 +91,7 @@ namespace Content.Client.Launcher
             }
             ConnectFailReason = args.Reason;
             CurrentPage = Page.ConnectFailed;
+            ConnectFailed?.Invoke(args);
         }
 
         private void OnConnectStateChanged(ClientConnectionState state)
@@ -106,12 +119,12 @@ namespace Content.Client.Launcher
                 }
                 else
                 {
-                    Logger.InfoS("launcher-ui", $"Redial not possible, no Ss14Address");
+                    _sawmill.Info($"Redial not possible, no Ss14Address");
                 }
             }
             catch (Exception ex)
             {
-                Logger.ErrorS("launcher-ui", $"Redial exception: {ex}");
+                _sawmill.Error($"Redial exception: {ex}");
             }
             return false;
         }

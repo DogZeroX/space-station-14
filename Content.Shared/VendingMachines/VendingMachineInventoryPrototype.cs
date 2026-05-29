@@ -1,31 +1,23 @@
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype.Dictionary;
 
 namespace Content.Shared.VendingMachines
 {
-    [Serializable, NetSerializable, Prototype("vendingMachineInventory")]
-    public sealed class VendingMachineInventoryPrototype : IPrototype
+    [Prototype]
+    public sealed partial class VendingMachineInventoryPrototype : IPrototype
     {
         [ViewVariables]
-        [IdDataFieldAttribute]
-        public string ID { get; } = default!;
+        [IdDataField]
+        public string ID { get; private set; } = default!;
 
-        [DataField("name")]
-        public string Name { get; } = string.Empty;
+        [DataField("startingInventory", customTypeSerializer:typeof(PrototypeIdDictionarySerializer<uint, EntityPrototype>))]
+        public Dictionary<string, uint> StartingInventory { get; private set; } = new();
 
-        [DataField("animationDuration")]
-        public double AnimationDuration { get; }
+        [DataField("emaggedInventory", customTypeSerializer:typeof(PrototypeIdDictionarySerializer<uint, EntityPrototype>))]
+        public Dictionary<string, uint>? EmaggedInventory { get; private set; }
 
-        [DataField("spriteName")]
-        public string SpriteName { get; } = string.Empty;
-
-        [DataField("startingInventory")]
-        public Dictionary<string, uint> StartingInventory { get; } = new();
-
-        [DataField("emaggedInventory")]
-        public Dictionary<string, uint>? EmaggedInventory { get; }
-
-        [DataField("contrabandInventory")]
-        public Dictionary<string, uint>? ContrabandInventory { get; }
+        [DataField("contrabandInventory", customTypeSerializer:typeof(PrototypeIdDictionarySerializer<uint, EntityPrototype>))]
+        public Dictionary<string, uint>? ContrabandInventory { get; private set; }
     }
 }

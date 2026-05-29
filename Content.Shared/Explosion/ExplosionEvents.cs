@@ -1,6 +1,5 @@
+using Content.Shared.Damage;
 using Content.Shared.Inventory;
-using Robust.Shared.Map;
-using Robust.Shared.Serialization;
 
 namespace Content.Shared.Explosion;
 
@@ -8,78 +7,46 @@ namespace Content.Shared.Explosion;
 ///     Raised directed at an entity to determine its explosion resistance, probably right before it is about to be
 ///     damaged by one.
 /// </summary>
-public sealed class GetExplosionResistanceEvent : EntityEventArgs, IInventoryRelayEvent
+[ByRefEvent]
+public record struct GetExplosionResistanceEvent(string ExplosionPrototype) : IInventoryRelayEvent
 {
     /// <summary>
-    ///     Can be set to whatever, but currently is being additively increased by components & clothing. So think twice
-    ///     before multiplying or directly setting this.
+    ///     A coefficient applied to overall explosive damage.
     /// </summary>
-    public float Resistance = 0;
+    public float DamageCoefficient = 1;
 
-    public readonly string ExplotionPrototype;
+    public readonly string ExplosionPrototype = ExplosionPrototype;
 
     SlotFlags IInventoryRelayEvent.TargetSlots =>  ~SlotFlags.POCKET;
-
-    public GetExplosionResistanceEvent(string id)
-    {
-        ExplotionPrototype = id;
-    }
 }
 
 /// <summary>
-///     An explosion event. Used for client side rendering.
+/// This event is raised directed at an entity that is about to receive damage from an explosion. It can be used to
+/// recursively add contained/child entities that should also receive damage. E.g., entities in a player's inventory
+/// or backpack. This event will be raised recursively so a matchbox in a backpack in a player's inventory
+/// will also receive this event.
 /// </summary>
-[Serializable, NetSerializable]
-public sealed class ExplosionEvent : EntityEventArgs
+[ByRefEvent]
+public record struct BeforeExplodeEvent(DamageSpecifier Damage, string Id, List<EntityUid> Contents)
 {
-    public MapCoordinates Epicenter;
+    /// <summary>
+    /// The damage that will be received by this entity. Note that the entity's explosion resistance has already been
+    /// used to modify this damage.
+    /// </summary>
+    public readonly DamageSpecifier Damage = Damage;
 
-    public Dictionary<int, List<Vector2i>>? SpaceTiles;
-    public Dictionary<GridId, Dictionary<int, List<Vector2i>>> Tiles;
+    /// <summary>
+    /// ID of the explosion prototype.
+    /// </summary>
+    public readonly string Id = Id;
 
-    public List<float> Intensity;
+    /// <summary>
+    /// Damage multiplier for modifying the damage that will get dealt to contained entities.
+    /// </summary>
+    public float DamageCoefficient = 1;
 
-    public string TypeID;
-
-    public Matrix3 SpaceMatrix;
-
-    public int ExplosionId;
-
-    public ushort SpaceTileSize;
-
-    public ExplosionEvent(
-        int explosionId,
-        MapCoordinates epicenter,
-        string typeID,
-        List<float> intensity,
-        Dictionary<int, List<Vector2i>>? spaceTiles,
-        Dictionary<GridId, Dictionary<int, List<Vector2i>>> tiles,
-        Matrix3 spaceMatrix,
-        ushort spaceTileSize)
-    {
-        Epicenter = epicenter;
-        SpaceTiles = spaceTiles;
-        Tiles = tiles;
-        Intensity = intensity;
-        TypeID = typeID;
-        SpaceMatrix = spaceMatrix;
-        ExplosionId = explosionId;
-        SpaceTileSize = spaceTileSize;
-    }
-}
-
-/// <summary>
-///     Update visual rendering of the explosion to correspond to the servers processing of it.
-/// </summary>
-[Serializable, NetSerializable]
-public sealed class ExplosionOverlayUpdateEvent : EntityEventArgs
-{
-    public int Index;
-    public int ExplosionId;
-
-    public ExplosionOverlayUpdateEvent(int explosionId, int index)
-    {
-        Index = index;
-        ExplosionId = explosionId;
-    }
+    /// <summary>
+    /// Contained/child entities that should receive recursive explosion damage.
+    /// </summary>
+    public readonly List<EntityUid> Contents = Contents;
 }

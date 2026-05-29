@@ -4,8 +4,8 @@ using Content.Shared.Atmos;
 namespace Content.Server.Atmos.Piping.Trinary.Components
 {
     [RegisterComponent]
-    [Friend(typeof(GasMixerSystem))]
-    public sealed class GasMixerComponent : Component
+    [Access(typeof(GasMixerSystem))]
+    public sealed partial class GasMixerComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
         [DataField("enabled")]

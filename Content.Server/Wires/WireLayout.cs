@@ -1,5 +1,5 @@
 using Robust.Shared.Prototypes;
-using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype.Array;
 
 namespace Content.Server.Wires;
 
@@ -10,17 +10,17 @@ namespace Content.Server.Wires;
 ///     wires. Once one of these is initialized, it should be stored in the
 ///     WiresSystem as a functional wire set.
 /// </summary>
-[Prototype("wireLayout")]
-public sealed class WireLayoutPrototype : IPrototype, IInheritingPrototype
+[Prototype]
+public sealed partial class WireLayoutPrototype : IPrototype, IInheritingPrototype
 {
-    [IdDataFieldAttribute]
-    public string ID { get; } = default!;
+    [IdDataField]
+    public string ID { get; private set; } = default!;
 
-    [ParentDataField(typeof(AbstractPrototypeIdSerializer<WireLayoutPrototype>))]
-    public string? Parent { get; } = default!;
+    [ParentDataField(typeof(AbstractPrototypeIdArraySerializer<WireLayoutPrototype>))]
+    public string[]? Parents { get; private set; }
 
     [AbstractDataField]
-    public bool Abstract { get; }
+    public bool Abstract { get; private set; }
 
     /// <summary>
     ///     How many wires in this layout will do
@@ -28,11 +28,13 @@ public sealed class WireLayoutPrototype : IPrototype, IInheritingPrototype
     ///     initialization)
     /// </summary>
     [DataField("dummyWires")]
-    public int DummyWires { get; } = default!;
+    [NeverPushInheritance]
+    public int DummyWires { get; private set; } = default!;
 
     /// <summary>
     ///     All the valid IWireActions currently in this layout.
     /// </summary>
     [DataField("wires")]
-    public List<IWireAction>? Wires { get; }
+    [NeverPushInheritance]
+    public List<IWireAction>? Wires { get; private set; }
 }

@@ -3,8 +3,8 @@
 namespace Content.Server.DeviceNetwork.Components.Devices
 {
     [RegisterComponent]
-    [Friend(typeof(ApcNetSwitchSystem))]
-    public sealed class ApcNetSwitchComponent : Component
+    [Access(typeof(ApcNetSwitchSystem))]
+    public sealed partial class ApcNetSwitchComponent : Component
     {
         [ViewVariables] public bool State;
     }

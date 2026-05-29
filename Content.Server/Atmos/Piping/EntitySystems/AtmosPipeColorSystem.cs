@@ -1,10 +1,13 @@
 using Content.Server.Atmos.Piping.Components;
 using Content.Shared.Atmos.Piping;
+using Robust.Server.GameObjects;
 
 namespace Content.Server.Atmos.Piping.EntitySystems
 {
-    public sealed class AtmosPipeColorSystem : EntitySystem
+    public sealed partial class AtmosPipeColorSystem : EntitySystem
     {
+        [Dependency] private SharedAppearanceSystem _appearance = default!;
+
         public override void Initialize()
         {
             base.Initialize();
@@ -15,28 +18,31 @@ namespace Content.Server.Atmos.Piping.EntitySystems
 
         private void OnStartup(EntityUid uid, AtmosPipeColorComponent component, ComponentStartup args)
         {
-            if (!EntityManager.TryGetComponent(uid, out AppearanceComponent? appearance))
+            if (!TryComp(uid, out AppearanceComponent? appearance))
                 return;
 
-            appearance.SetData(PipeColorVisuals.Color, component.Color);
+            _appearance.SetData(uid, PipeColorVisuals.Color, component.Color, appearance);
         }
 
         private void OnShutdown(EntityUid uid, AtmosPipeColorComponent component, ComponentShutdown args)
         {
-            if (!EntityManager.TryGetComponent(uid, out AppearanceComponent? appearance))
+            if (!TryComp(uid, out AppearanceComponent? appearance))
                 return;
 
-            appearance.SetData(PipeColorVisuals.Color, Color.White);
+            _appearance.SetData(uid, PipeColorVisuals.Color, Color.White, appearance);
         }
 
         public void SetColor(EntityUid uid, AtmosPipeColorComponent component, Color color)
         {
             component.Color = color;
 
-            if (!EntityManager.TryGetComponent(uid, out AppearanceComponent? appearance))
+            if (!TryComp(uid, out AppearanceComponent? appearance))
                 return;
 
-            appearance.SetData(PipeColorVisuals.Color, color);
+            _appearance.SetData(uid, PipeColorVisuals.Color, color, appearance);
+
+            var ev = new AtmosPipeColorChangedEvent(color);
+            RaiseLocalEvent(uid, ref ev);
         }
     }
 }

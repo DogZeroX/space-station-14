@@ -1,6 +1,7 @@
 ﻿using Content.Server.Stack;
 using Content.Shared.Construction;
 using Content.Shared.Prototypes;
+using Content.Shared.Stacks;
 using JetBrains.Annotations;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
@@ -9,7 +10,7 @@ namespace Content.Server.Construction.Completions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class SpawnPrototype : IGraphAction
+    public sealed partial class SpawnPrototype : IGraphAction
     {
         [DataField("prototype", customTypeSerializer:typeof(PrototypeIdSerializer<EntityPrototype>))]
         public string Prototype { get; private set; } = string.Empty;
@@ -27,7 +28,7 @@ namespace Content.Server.Construction.Completions
             {
                 var stackEnt = entityManager.SpawnEntity(Prototype, coordinates);
                 var stack = entityManager.GetComponent<StackComponent>(stackEnt);
-                entityManager.EntitySysManager.GetEntitySystem<StackSystem>().SetCount(stackEnt, Amount, stack);
+                entityManager.EntitySysManager.GetEntitySystem<StackSystem>().SetCount((stackEnt, stack), Amount);
             }
             else
             {

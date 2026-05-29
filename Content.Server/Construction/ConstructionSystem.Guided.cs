@@ -5,11 +5,15 @@ using Content.Shared.Construction.Steps;
 using Content.Shared.Examine;
 using Content.Shared.Popups;
 using Content.Shared.Verbs;
+using Robust.Shared.Player;
+using Robust.Shared.Utility;
 
 namespace Content.Server.Construction
 {
     public sealed partial class ConstructionSystem
     {
+        [Dependency] private SharedPopupSystem _popup = default!;
+
         private readonly Dictionary<ConstructionPrototype, ConstructionGuide> _guideCache = new();
 
         private void InitializeGuided()
@@ -21,27 +25,40 @@ namespace Content.Server.Construction
 
         private void OnGuideRequested(RequestConstructionGuide msg, EntitySessionEventArgs args)
         {
-            if (!_prototypeManager.TryIndex(msg.ConstructionId, out ConstructionPrototype? prototype))
+            if (!PrototypeManager.TryIndex(msg.ConstructionId, out ConstructionPrototype? prototype))
                 return;
 
             if(GetGuide(prototype) is {} guide)
-                RaiseNetworkEvent(new ResponseConstructionGuide(msg.ConstructionId, guide), args.SenderSession.ConnectedClient);
+                RaiseNetworkEvent(new ResponseConstructionGuide(msg.ConstructionId, guide), args.SenderSession.Channel);
         }
 
         private void AddDeconstructVerb(EntityUid uid, ConstructionComponent component, GetVerbsEvent<Verb> args)
         {
-            if (!args.CanAccess || !args.CanInteract)
+            if (!args.CanAccess || !args.CanInteract || args.Hands == null)
                 return;
 
             if (component.TargetNode == component.DeconstructionNode ||
                 component.Node == component.DeconstructionNode)
                 return;
 
+            if (!PrototypeManager.TryIndex(component.Graph, out ConstructionGraphPrototype? graph))
+                return;
+
+            if (component.DeconstructionNode == null)
+                return;
+
+            if (GetCurrentNode(uid, component) is not {} currentNode)
+                return;
+
+            if (graph.Path(currentNode.Name, component.DeconstructionNode) is not {} path || path.Length == 0)
+                return;
+
             Verb verb = new();
             //verb.Category = VerbCategories.Construction;
             //TODO VERBS add more construction verbs? Until then, removing construction category
             verb.Text = Loc.GetString("deconstructible-verb-begin-deconstruct");
-            verb.IconTexture = "/Textures/Interface/hammer_scaled.svg.192dpi.png";
+            verb.Icon = new SpriteSpecifier.Texture(
+                new ("/Textures/Interface/hammer_scaled.svg.192dpi.png"));
 
             verb.Act = () =>
             {
@@ -49,11 +66,11 @@ namespace Content.Server.Construction
                 if (component.TargetNode == null)
                 {
                     // Maybe check, but on the flip-side a better solution might be to not make it undeconstructible in the first place, no?
-                    component.Owner.PopupMessage(args.User, Loc.GetString("deconstructible-verb-activate-no-target-text"));
+                    _popup.PopupEntity(Loc.GetString("deconstructible-verb-activate-no-target-text"), uid, uid);
                 }
                 else
                 {
-                    component.Owner.PopupMessage(args.User, Loc.GetString("deconstructible-verb-activate-text"));
+                    _popup.PopupEntity(Loc.GetString("deconstructible-verb-activate-text"), args.User, args.User);
                 }
             };
 
@@ -62,40 +79,50 @@ namespace Content.Server.Construction
 
         private void HandleConstructionExamined(EntityUid uid, ConstructionComponent component, ExaminedEvent args)
         {
-            if (GetTargetNode(uid, component) is {} target)
+            using (args.PushGroup(nameof(ConstructionComponent)))
             {
-                args.PushMarkup(Loc.GetString(
-                    "construction-component-to-create-header",
-                    ("targetName", target.Name)) + "\n");
-            }
-
-            if (component.EdgeIndex == null && GetTargetEdge(uid, component) is {} targetEdge)
-            {
-                var preventStepExamine = false;
-
-                foreach (var condition in targetEdge.Conditions)
+                if (GetTargetNode(uid, component) is {} target)
                 {
-                    preventStepExamine |= condition.DoExamine(args);
+                    if (target.Name == component.DeconstructionNode)
+                    {
+                        args.PushMarkup(Loc.GetString("deconstruction-header-text") + "\n");
+                    }
+                    else
+                    {
+                        args.PushMarkup(Loc.GetString(
+                            "construction-component-to-create-header",
+                            ("targetName", target.Name)) + "\n");
+                    }
                 }
 
-                if (!preventStepExamine)
-                    targetEdge.Steps[0].DoExamine(args);
-                return;
-            }
-
-            if (GetCurrentEdge(uid, component) is {} edge)
-            {
-                var preventStepExamine = false;
-
-                foreach (var condition in edge.Conditions)
+                if (component.EdgeIndex == null && GetTargetEdge(uid, component) is {} targetEdge)
                 {
-                    preventStepExamine |= condition.DoExamine(args);
+                    var preventStepExamine = false;
+
+                    foreach (var condition in targetEdge.Conditions)
+                    {
+                        preventStepExamine |= condition.DoExamine(args);
+                    }
+
+                    if (!preventStepExamine)
+                        targetEdge.Steps[0].DoExamine(args);
+                    return;
                 }
 
-                if (!preventStepExamine && component.StepIndex < edge.Steps.Count)
-                    edge.Steps[component.StepIndex].DoExamine(args);
-                return;
+                if (GetCurrentEdge(uid, component) is {} edge)
+                {
+                    var preventStepExamine = false;
+
+                    foreach (var condition in edge.Conditions)
+                    {
+                        preventStepExamine |= condition.DoExamine(args);
+                    }
+
+                    if (!preventStepExamine && component.StepIndex < edge.Steps.Count)
+                        edge.Steps[component.StepIndex].DoExamine(args);
+                }
             }
+
         }
 
 
@@ -118,7 +145,7 @@ namespace Content.Server.Construction
                 return guide;
 
             // If the graph doesn't actually exist, do nothing.
-            if (!_prototypeManager.TryIndex(construction.Graph, out ConstructionGraphPrototype? graph))
+            if (!PrototypeManager.Resolve(construction.Graph, out ConstructionGraphPrototype? graph))
                 return null;
 
             // If either the start node or the target node are missing, do nothing.

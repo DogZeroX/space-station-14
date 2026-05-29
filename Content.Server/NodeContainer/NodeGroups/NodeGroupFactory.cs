@@ -1,4 +1,5 @@
 using System.Reflection;
+using Content.Shared.NodeContainer.NodeGroups;
 using Robust.Shared.Reflection;
 
 namespace Content.Server.NodeContainer.NodeGroups
@@ -17,10 +18,10 @@ namespace Content.Server.NodeContainer.NodeGroups
         INodeGroup MakeNodeGroup(NodeGroupID id);
     }
 
-    public sealed class NodeGroupFactory : INodeGroupFactory
+    public sealed partial class NodeGroupFactory : INodeGroupFactory
     {
-        [Dependency] private readonly IReflectionManager _reflectionManager = default!;
-        [Dependency] private readonly IDynamicTypeFactory _typeFactory = default!;
+        [Dependency] private IReflectionManager _reflectionManager = default!;
+        [Dependency] private IDynamicTypeFactory _typeFactory = default!;
 
         private readonly Dictionary<NodeGroupID, Type> _groupTypes = new();
 
@@ -49,16 +50,5 @@ namespace Content.Server.NodeContainer.NodeGroups
             instance.Create(id);
             return instance;
         }
-    }
-
-    public enum NodeGroupID : byte
-    {
-        Default,
-        HVPower,
-        MVPower,
-        Apc,
-        AMEngine,
-        Pipe,
-        WireNet
     }
 }

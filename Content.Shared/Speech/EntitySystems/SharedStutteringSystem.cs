@@ -1,12 +1,25 @@
-using Content.Shared.StatusEffect;
+using Content.Shared.Speech.Components;
+using Content.Shared.StatusEffectNew;
+using Robust.Shared.Prototypes;
 
-namespace Content.Shared.Speech.EntitySystems
+namespace Content.Shared.Speech.EntitySystems;
+
+public abstract partial class SharedStutteringSystem : RelayAccentSystem<StutteringAccentComponent>
 {
-    public abstract class SharedStutteringSystem : EntitySystem
+    public static readonly EntProtoId Stuttering = "StatusEffectStutter";
+
+    [Dependency] protected StatusEffectsSystem Status = default!;
+
+    // For code in shared... I imagine we ain't getting accent prediction anytime soon so let's not bother.
+    public virtual void DoStutter(EntityUid uid, TimeSpan time, bool refresh)
     {
-        // For code in shared... I imagine we ain't getting accent prediction anytime soon so let's not bother.
-        public virtual void DoStutter(EntityUid uid, TimeSpan time, bool refresh, StatusEffectsComponent? status = null)
-        {
-        }
+    }
+
+    public virtual void DoRemoveStutterTime(EntityUid uid, TimeSpan timeRemoved)
+    {
+    }
+
+    public virtual void DoRemoveStutter(EntityUid uid)
+    {
     }
 }

@@ -1,12 +1,14 @@
 using Content.Server.Light.Components;
 using Content.Server.Power.Components;
 using Content.Server.Power.EntitySystems;
-using Robust.Server.GameObjects;
+using Content.Shared.Power;
 
 namespace Content.Server.Light.EntitySystems
 {
-    public sealed class LitOnPoweredSystem : EntitySystem
+    public sealed partial class LitOnPoweredSystem : EntitySystem
     {
+        [Dependency] private SharedPointLightSystem _lights = default!;
+
         public override void Initialize()
         {
             base.Initialize();
@@ -14,19 +16,19 @@ namespace Content.Server.Light.EntitySystems
             SubscribeLocalEvent<LitOnPoweredComponent, PowerNetBatterySupplyEvent>(OnPowerSupply);
         }
 
-        private void OnPowerChanged(EntityUid uid, LitOnPoweredComponent component, PowerChangedEvent args)
+        private void OnPowerChanged(EntityUid uid, LitOnPoweredComponent component, ref PowerChangedEvent args)
         {
-            if (EntityManager.TryGetComponent<PointLightComponent>(uid, out var light))
+            if (_lights.TryGetLight(uid, out var light))
             {
-                light.Enabled = args.Powered;
+                _lights.SetEnabled(uid, args.Powered, light);
             }
         }
 
-        private void OnPowerSupply(EntityUid uid, LitOnPoweredComponent component, PowerNetBatterySupplyEvent args)
+        private void OnPowerSupply(EntityUid uid, LitOnPoweredComponent component, ref PowerNetBatterySupplyEvent args)
         {
-            if (EntityManager.TryGetComponent<PointLightComponent>(uid, out var light))
+            if (_lights.TryGetLight(uid, out var light))
             {
-                light.Enabled = args.Supply;
+                _lights.SetEnabled(uid, args.Supply, light);
             }
         }
     }

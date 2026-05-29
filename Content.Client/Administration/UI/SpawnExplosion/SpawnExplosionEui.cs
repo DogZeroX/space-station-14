@@ -8,9 +8,10 @@ using Robust.Shared.Map;
 namespace Content.Client.Administration.UI.SpawnExplosion;
 
 [UsedImplicitly]
-public sealed class SpawnExplosionEui : BaseEui
+public sealed partial class SpawnExplosionEui : BaseEui
 {
-    [Dependency] private readonly IOverlayManager _overlayManager = default!;
+    [Dependency] private EntityManager _entManager = default!;
+    [Dependency] private IOverlayManager _overlayManager = default!;
 
     private readonly SpawnExplosionWindow _window;
     private ExplosionDebugOverlay? _debugOverlay;
@@ -38,7 +39,7 @@ public sealed class SpawnExplosionEui : BaseEui
 
     public void SendClosedMessage()
     {
-        SendMessage(new SpawnExplosionEuiMsg.Close());
+        SendMessage(new CloseEuiMessage());
     }
 
     public void ClearOverlay()
@@ -69,7 +70,15 @@ public sealed class SpawnExplosionEui : BaseEui
             _overlayManager.AddOverlay(_debugOverlay);
         }
 
-        _debugOverlay.Tiles = data.Explosion.Tiles;
+        var tiles = new Dictionary<EntityUid, Dictionary<int, List<Vector2i>>>();
+        _debugOverlay.Tiles.Clear();
+
+        foreach (var (nent, det) in data.Explosion.Tiles)
+        {
+            tiles[_entManager.GetEntity(nent)] = det;
+        }
+
+        _debugOverlay.Tiles = tiles;
         _debugOverlay.SpaceTiles = data.Explosion.SpaceTiles;
         _debugOverlay.Intensity = data.Explosion.Intensity;
         _debugOverlay.Slope = data.Slope;

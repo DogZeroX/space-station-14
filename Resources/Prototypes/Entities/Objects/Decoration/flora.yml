@@ -1,45 +1,99 @@
 - type: entity
   id: BaseRock
+  name: boulder
   description: Heavy as a really heavy thing.
   abstract: true
   components:
   - type: Clickable
   - type: Sprite
+    noRot: true
     sprite: Objects/Decoration/Flora/flora_rockssolid.rsi
-    netsync: false
   - type: Physics
     bodyType: Static
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeCircle
-        radius: 0.4
-      mass: 500
-      layer:
-      - HalfWallLayer
-      - Opaque
+      fix1:
+        shape:
+          !type:PhysShapeCircle
+          radius: 0.4
+        density: 1000
+        layer:
+        - HalfWallLayer
+        - Opaque
   - type: Climbable
+  - type: Damageable
+    damageModifierSet: Metallic
+  - type: Injurable
+    damageContainer: Inorganic
+  - type: Destructible
+    thresholds:
+      - trigger:
+          !type:DamageTrigger
+          damage: 200
+        behaviors:
+          - !type:DoActsBehavior
+            acts: [ "Destruction" ]
 
 - type: entity
   id: BaseTree
   description: Yep, it's a tree.
   abstract: true
   components:
+  - type: SpriteFade
   - type: Clickable
   - type: Sprite
+    noRot: true
     sprite: Objects/Decoration/Flora/flora_trees.rsi
-    netsync: false
     drawdepth: Overdoors
+    offset: 0,0.9
   - type: Physics
     bodyType: Static
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.35,-1.3,0.35,-0.5"
-      mass: 500
-      layer:
-      - WallLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.35,-0.4,0.35,0.4"
+        density: 1000
+        layer:
+        - WallLayer
+  - type: Damageable
+    damageModifierSet: Wood
+  - type: Injurable
+    damageContainer: StructuralInorganic
+  - type: MeleeSound
+    soundGroups:
+      Brute:
+        path: /Audio/Effects/chop.ogg
+        params:
+          variation: 0.05
+  - type: Destructible
+    thresholds:
+    - trigger:
+        !type:DamageTrigger
+        damage: 400
+      behaviors:
+        - !type:DoActsBehavior
+          acts: [ "Destruction" ]
+    - trigger:
+        !type:DamageTrigger
+        damage: 50
+      behaviors:
+      - !type:PlaySoundBehavior
+        sound:
+          path: /Audio/Effects/tree_fell.ogg
+          params:
+            volume: 5
+            variation: 0.05
+      - !type:DoActsBehavior
+        acts: [ "Destruction" ]
+      - !type:SpawnEntitiesBehavior
+        spawn:
+          Log:
+            min: 2
+            max: 8
+  - type: TypingIndicator # Add diona typing indicator here so that diona players keep the same typing bubble when polymorphed into a tree.
+    proto: diona
 
 - type: entity
   parent: BaseTree
@@ -48,14 +102,16 @@
   components:
   - type: Sprite
     sprite: Objects/Decoration/Flora/flora_treessnow.rsi
+    offset: 0,0.7
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.1,-1.0,0.1,-0.4"
-      mass: 500
-      layer:
-      - WallLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.1,-0.3,0.1,0.3"
+        density: 4000
+        layer:
+        - WallLayer
 
 - type: entity
   parent: BaseTree
@@ -64,14 +120,16 @@
   components:
   - type: Sprite
     sprite: Objects/Decoration/Flora/flora_treeslarge.rsi
+    offset: 0,1.55
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.18,-1.9,0.18,-1.2"
-      mass: 500
-      layer:
-      - WallLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.18,-0.35,0.18,0.35"
+        density: 2000
+        layer:
+        - WallLayer
 
 - type: entity
   parent: BaseTree
@@ -80,134 +138,120 @@
   components:
   - type: Sprite
     sprite: Objects/Decoration/Flora/flora_treesconifer.rsi
+    offset: 0,1.15
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.1,-1.5,0.1,-0.8"
-      mass: 500
-      layer:
-      - WallLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.1,-0.35,0.1,0.35"
+        density: 3500
+        layer:
+        - WallLayer
 
 - type: entity
   parent: BaseRock
-  id: FloraRockSolid01
-  name: rock
+  id: FloraRockSolid
   components:
   - type: Sprite
-    state: rocksolid01
+    layers:
+    - state: rocksolid01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        rocksolid01: ""
+        rocksolid02: ""
+        rocksolid03: ""
 
 - type: entity
+  name: stalagmite
+  description: Natural stone spikes.
   parent: BaseRock
-  id: FloraRockSolid02
-  name: rock
+  id: FloraStalagmite
   components:
+  - type: Destructible
+    thresholds:
+      - trigger:
+          !type:DamageTrigger
+          damage: 5
+        behaviors:
+          - !type:DoActsBehavior
+            acts: [ "Destruction" ]
+          - !type:PlaySoundBehavior
+            sound:
+              collection: GlassBreak
   - type: Sprite
-    state: rocksolid02
+    sprite: Objects/Decoration/Flora/flora_stalagmite.rsi
+    layers:
+    - state: stalagmite1
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        stalagmite1: ""
+        stalagmite2: ""
+        stalagmite3: ""
+        stalagmite4: ""
+        stalagmite5: ""
+        stalagmite6: ""
 
 - type: entity
-  parent: BaseRock
-  id: FloraRockSolid03
-  name: rock
+  parent: FloraStalagmite
+  id: FloraGreyStalagmite
   components:
   - type: Sprite
-    state: rocksolid03
-
-- type: entity
-  parent: BaseTree
-  id: FloraTree01
-  name: tree
-  components:
-  - type: Sprite
-    state: tree01
-
-- type: entity
-  parent: BaseTree
-  id: FloraTree02
-  name: tree
-  components:
-  - type: Sprite
-    state: tree02
-
-- type: entity
-  parent: BaseTree
-  id: FloraTree03
-  name: tree
-  components:
-  - type: Sprite
-    state: tree03
-
-- type: entity
-  parent: BaseTree
-  id: FloraTree04
-  name: tree
-  components:
-  - type: Sprite
-    state: tree04
-
-- type: entity
-  parent: BaseTree
-  id: FloraTree05
-  name: tree
-  components:
-  - type: Sprite
-    state: tree05
+    sprite: Objects/Decoration/Flora/flora_stalagmite.rsi
+    layers:
+    - state: grey_stalagmite1
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        grey_stalagmite1: ""
+        grey_stalagmite2: ""
+        grey_stalagmite3: ""
+        grey_stalagmite4: ""
+        grey_stalagmite5: ""
+        grey_stalagmite6: ""
 
 - type: entity
   parent: BaseTree
-  id: FloraTree06
+  id: FloraTree
   name: tree
   components:
   - type: Sprite
-    state: tree06
+    layers:
+    - state: tree01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        tree01: ""
+        tree02: ""
+        tree03: ""
+        tree04: ""
+        tree05: ""
+        tree06: ""
 
 - type: entity
   parent: BaseTreeSnow
-  id: FloraTreeSnow01
+  id: FloraTreeSnow
   name: snowy tree
   components:
   - type: Sprite
-    state: treesnow01
-
-- type: entity
-  parent: BaseTreeSnow
-  id: FloraTreeSnow02
-  name: snowy tree
-  components:
-  - type: Sprite
-    state: treesnow02
-
-- type: entity
-  parent: BaseTreeSnow
-  id: FloraTreeSnow03
-  name: snowy tree
-  components:
-  - type: Sprite
-    state: treesnow03
-
-- type: entity
-  parent: BaseTreeSnow
-  id: FloraTreeSnow04
-  name: snowy tree
-  components:
-  - type: Sprite
-    state: treesnow04
-
-- type: entity
-  parent: BaseTreeSnow
-  id: FloraTreeSnow05
-  name: snowy tree
-  components:
-  - type: Sprite
-    state: treesnow05
-
-- type: entity
-  parent: BaseTreeSnow
-  id: FloraTreeSnow06
-  name: snowy tree
-  components:
-  - type: Sprite
-    state: treesnow06
+    layers:
+    - state: treesnow01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        treesnow01: ""
+        treesnow02: ""
+        treesnow03: ""
+        treesnow04: ""
+        treesnow05: ""
+        treesnow06: ""
 
 - type: entity
   parent: BaseTreeSnow
@@ -219,75 +263,38 @@
 
 - type: entity
   parent: BaseTreeLarge
-  id: FloraTreeLarge01
+  id: FloraTreeLarge
   name: large tree
   components:
   - type: Sprite
-    state: treelarge01
-
-- type: entity
-  parent: BaseTreeLarge
-  id: FloraTreeLarge02
-  name: large tree
-  components:
-  - type: Sprite
-    state: treelarge02
-
-- type: entity
-  parent: BaseTreeLarge
-  id: FloraTreeLarge03
-  name: large tree
-  components:
-  - type: Sprite
-    state: treelarge03
-
-- type: entity
-  parent: BaseTreeLarge
-  id: FloraTreeLarge04
-  name: large tree
-  components:
-  - type: Sprite
-    state: treelarge04
-
-- type: entity
-  parent: BaseTreeLarge
-  id: FloraTreeLarge05
-  name: large tree
-  components:
-  - type: Sprite
-    state: treelarge05
-
-- type: entity
-  parent: BaseTreeLarge
-  id: FloraTreeLarge06
-  name: large tree
-  components:
-  - type: Sprite
-    state: treelarge06
+    layers:
+    - state: treelarge01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        treelarge01: ""
+        treelarge02: ""
+        treelarge03: ""
+        treelarge04: ""
+        treelarge05: ""
+        treelarge06: ""
 
 - type: entity
   parent: BaseTreeConifer
-  id: FloraTreeConifer01
+  id: FloraTreeConifer
   name: snowy conifer
   components:
   - type: Sprite
-    state: treeconifer01
-
-- type: entity
-  parent: BaseTreeConifer
-  id: FloraTreeConifer02
-  name: snowy conifer
-  components:
-  - type: Sprite
-    state: treeconifer02
-
-- type: entity
-  parent: BaseTreeConifer
-  id: FloraTreeConifer03
-  name: snowy conifer
-  components:
-  - type: Sprite
-    state: treeconifer03
+    layers:
+    - state: treeconifer01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        treeconifer01: ""
+        treeconifer02: ""
+        treeconifer03: ""
 
 - type: entity
   parent: BaseTreeConifer
@@ -300,18 +307,50 @@
 - type: entity
   parent: BaseTreeConifer
   id: FloraTreeChristmas02
+  suffix: Safe Presents
   name: christmas tree
   components:
   - type: Sprite
     state: treechristmas02
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.8,-1.5,0.8,-0.8"
-      mass: 500
-      layer:
-      - WallLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.5,0,0.5,0.75"
+        density: 4500
+        layer:
+        - WallLayer
+  - type: LimitedItemGiver
+    spawnEntries:
+      - id: PresentRandom
+        orGroup: present
+      - id: PresentRandomCash # buy your own.
+        prob: 0.1
+        orGroup: present
+      - id: PresentRandomCoal # naughty
+        prob: 0.05
+        orGroup: present
+    receivedPopup: christmas-tree-got-gift
+    deniedPopup: christmas-tree-no-gift
+    requiredHoliday: FestiveSeason
+
+- type: entity
+  parent: FloraTreeChristmas02
+  id: FloraTreeChristmas03
+  suffix: Insane Presents
+  name: christmas tree
+  components:
+  - type: LimitedItemGiver
+    spawnEntries:
+      - id: PresentRandom
+        orGroup: present
+      - id: PresentRandomUnsafe
+        prob: 0.5
+        orGroup: present
+      - id: PresentRandomInsane
+        prob: 0.2
+        orGroup: present
 
 - type: entity
   parent: BaseTreeConifer
@@ -320,3 +359,67 @@
   components:
   - type: Sprite
     state: treestumpconifer
+
+- type: entity
+  parent: FloraTree
+  id: ShadowTree
+  name: dark wood
+  description: The leaves are whispering about you.
+  components:
+  - type: Sprite
+    sprite: Objects/Decoration/Flora/flora_shadow_trees.rsi
+
+- type: entity
+  parent: BaseTree
+  id: LightTree
+  name: glowing tree
+  description: A marvelous tree filled with strange energy.
+  components:
+  - type: PointLight
+    radius: 2.0
+    energy: 4.5
+    color: "#6270bb"
+  - type: Sprite
+    sprite: Objects/Decoration/Flora/flora_treeslight.rsi
+    layers:
+    - state: tree01
+      map: ["random"]
+  - type: RandomSprite
+    available:
+    - random:
+        tree01: ""
+        tree02: ""
+        tree03: ""
+        tree04: ""
+        tree05: ""
+        tree06: ""
+  - type: Destructible
+    thresholds:
+    - trigger:
+        !type:DamageTrigger
+        damage: 400
+      behaviors:
+        - !type:DoActsBehavior
+          acts: [ "Destruction" ]
+    - trigger:
+        !type:DamageTrigger
+        damage: 25
+      behaviors:
+      - !type:PlaySoundBehavior
+        sound:
+          path: /Audio/Effects/tree_fell.ogg
+          params:
+            volume: 5
+            variation: 0.05
+      - !type:DoActsBehavior
+        acts: [ "Destruction" ]
+      - !type:SpawnEntitiesBehavior
+        spawn:
+          Log:
+            min: 0
+            max: 1
+      - !type:SpawnEntitiesBehavior
+        spawn:
+          MobLuminousObject:
+            min: 0
+            max: 1

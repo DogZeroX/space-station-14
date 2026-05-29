@@ -13,6 +13,7 @@ namespace Content.Shared.Atmos.Piping.Unary.Components
         public VentPressureBound PressureChecks { get; set; } = VentPressureBound.ExternalBound;
         public float ExternalPressureBound { get; set; } = Atmospherics.OneAtmosphere;
         public float InternalPressureBound { get; set; } = 0f;
+        public bool PressureLockoutOverride { get; set; } = false;
 
         // Presets for 'dumb' air alarm modes
 
@@ -22,7 +23,8 @@ namespace Content.Shared.Atmos.Piping.Unary.Components
             PumpDirection = VentPumpDirection.Releasing,
             PressureChecks = VentPressureBound.ExternalBound,
             ExternalPressureBound = Atmospherics.OneAtmosphere,
-            InternalPressureBound = 0f
+            InternalPressureBound = 0f,
+            PressureLockoutOverride = false
         };
 
         public static GasVentPumpData FillModePreset = new GasVentPumpData
@@ -32,7 +34,8 @@ namespace Content.Shared.Atmos.Piping.Unary.Components
             PumpDirection = VentPumpDirection.Releasing,
             PressureChecks = VentPressureBound.ExternalBound,
             ExternalPressureBound = Atmospherics.OneAtmosphere * 50,
-            InternalPressureBound = 0f
+            InternalPressureBound = 0f,
+            PressureLockoutOverride = true
         };
 
         public static GasVentPumpData PanicModePreset = new GasVentPumpData
@@ -42,7 +45,20 @@ namespace Content.Shared.Atmos.Piping.Unary.Components
             PumpDirection = VentPumpDirection.Releasing,
             PressureChecks = VentPressureBound.ExternalBound,
             ExternalPressureBound = Atmospherics.OneAtmosphere,
-            InternalPressureBound = 0f
+            InternalPressureBound = 0f,
+            PressureLockoutOverride = false
+        };
+
+        public static GasVentPumpData ReplaceModePreset = new GasVentPumpData
+        {
+            Enabled = false,
+            IgnoreAlarms = true,
+            Dirty = true,
+            PumpDirection = VentPumpDirection.Releasing,
+            PressureChecks = VentPressureBound.ExternalBound,
+            ExternalPressureBound = Atmospherics.OneAtmosphere,
+            InternalPressureBound = 0f,
+            PressureLockoutOverride = false
         };
     }
 

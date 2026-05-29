@@ -1,63 +1,88 @@
-using Content.Client.Audio;
+using Content.Client.Administration.Managers;
+using Content.Client.Gameplay;
 using Content.Client.Lobby;
 using Content.Client.RoundEnd;
-using Content.Client.Viewport;
 using Content.Shared.GameTicking;
 using Content.Shared.GameWindow;
+using Content.Shared.Roles;
 using JetBrains.Annotations;
 using Robust.Client.Graphics;
 using Robust.Client.State;
-using Robust.Shared.Network;
-using Robust.Shared.Utility;
+using Robust.Client.UserInterface;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Audio;
+using Content.Shared.GameTicking.Prototypes;
 
 namespace Content.Client.GameTicking.Managers
 {
     [UsedImplicitly]
-    public sealed class ClientGameTicker : SharedGameTicker
+    public sealed partial class ClientGameTicker : SharedGameTicker
     {
-        [Dependency] private readonly IStateManager _stateManager = default!;
-        [ViewVariables] private bool _initialized;
-        private Dictionary<EntityUid, Dictionary<string, uint?>>  _jobsAvailable = new();
-        private Dictionary<EntityUid, string> _stationNames = new();
+        [Dependency] private IStateManager _stateManager = default!;
+        [Dependency] private IClientAdminManager _admin = default!;
+        [Dependency] private IClyde _clyde = default!;
+        [Dependency] private IUserInterfaceManager _userInterfaceManager = default!;
+
+        private Dictionary<NetEntity, Dictionary<ProtoId<JobPrototype>, int?>>  _jobsAvailable = new();
+        private Dictionary<NetEntity, string> _stationNames = new();
 
         [ViewVariables] public bool AreWeReady { get; private set; }
         [ViewVariables] public bool IsGameStarted { get; private set; }
-        [ViewVariables] public string? LobbySong { get; private set; }
-        [ViewVariables] public string? LobbyBackground { get; private set; }
+        [ViewVariables] public ResolvedSoundSpecifier? RestartSound { get; private set; }
+        [ViewVariables] public ProtoId<LobbyBackgroundPrototype>? LobbyBackground { get; private set; }
         [ViewVariables] public bool DisallowedLateJoin { get; private set; }
         [ViewVariables] public string? ServerInfoBlob { get; private set; }
         [ViewVariables] public TimeSpan StartTime { get; private set; }
         [ViewVariables] public new bool Paused { get; private set; }
-        [ViewVariables] public Dictionary<NetUserId, LobbyPlayerStatus> Status { get; private set; } = new();
-        [ViewVariables] public IReadOnlyDictionary<EntityUid, Dictionary<string, uint?>> JobsAvailable => _jobsAvailable;
-        [ViewVariables] public IReadOnlyDictionary<EntityUid, string> StationNames => _stationNames;
+
+        public override IReadOnlyList<(TimeSpan, string)> AllPreviousGameRules => new List<(TimeSpan, string)>();
+
+        [ViewVariables] public IReadOnlyDictionary<NetEntity, Dictionary<ProtoId<JobPrototype>, int?>> JobsAvailable => _jobsAvailable;
+        [ViewVariables] public IReadOnlyDictionary<NetEntity, string> StationNames => _stationNames;
 
         public event Action? InfoBlobUpdated;
         public event Action? LobbyStatusUpdated;
-        public event Action? LobbyReadyUpdated;
         public event Action? LobbyLateJoinStatusUpdated;
-        public event Action<IReadOnlyDictionary<EntityUid, Dictionary<string, uint?>>>? LobbyJobsAvailableUpdated;
+        public event Action<IReadOnlyDictionary<NetEntity, Dictionary<ProtoId<JobPrototype>, int?>>>? LobbyJobsAvailableUpdated;
 
         public override void Initialize()
         {
-            DebugTools.Assert(!_initialized);
+            base.Initialize();
 
             SubscribeNetworkEvent<TickerJoinLobbyEvent>(JoinLobby);
             SubscribeNetworkEvent<TickerJoinGameEvent>(JoinGame);
+            SubscribeNetworkEvent<TickerConnectionStatusEvent>(ConnectionStatus);
             SubscribeNetworkEvent<TickerLobbyStatusEvent>(LobbyStatus);
             SubscribeNetworkEvent<TickerLobbyInfoEvent>(LobbyInfo);
             SubscribeNetworkEvent<TickerLobbyCountdownEvent>(LobbyCountdown);
-            SubscribeNetworkEvent<TickerLobbyReadyEvent>(LobbyReady);
             SubscribeNetworkEvent<RoundEndMessageEvent>(RoundEnd);
-            SubscribeNetworkEvent<RequestWindowAttentionEvent>(msg =>
-            {
-                IoCManager.Resolve<IClyde>().RequestWindowAttention();
-            });
+            SubscribeNetworkEvent<RequestWindowAttentionEvent>(OnAttentionRequest);
             SubscribeNetworkEvent<TickerLateJoinStatusEvent>(LateJoinStatus);
             SubscribeNetworkEvent<TickerJobsAvailableEvent>(UpdateJobsAvailable);
 
-            Status = new Dictionary<NetUserId, LobbyPlayerStatus>();
-            _initialized = true;
+            _admin.AdminStatusUpdated += OnAdminUpdated;
+            OnAdminUpdated();
+        }
+
+        public override void Shutdown()
+        {
+            _admin.AdminStatusUpdated -= OnAdminUpdated;
+            base.Shutdown();
+        }
+
+        private void OnAdminUpdated()
+        {
+            // Hide some map/grid related logs from clients. This is to try prevent some easy metagaming by just
+            // reading the console. E.g., logs like this one could leak the nuke station/grid:
+            // > Grid NT-Arrivals 1101 (122/n25896) changed parent. Old parent: map 10 (121/n25895). New parent: FTL (123/n26470)
+#if !DEBUG
+            EntityManager.System<SharedMapSystem>().Log.Level = _admin.IsAdmin() ? LogLevel.Info : LogLevel.Warning;
+#endif
+        }
+
+        private void OnAttentionRequest(RequestWindowAttentionEvent ev)
+        {
+            _clyde.RequestWindowAttention();
         }
 
         private void LateJoinStatus(TickerLateJoinStatusEvent message)
@@ -68,8 +93,19 @@ namespace Content.Client.GameTicking.Managers
 
         private void UpdateJobsAvailable(TickerJobsAvailableEvent message)
         {
-            _jobsAvailable = message.JobsAvailableByStation;
-            _stationNames = message.StationNames;
+            _jobsAvailable.Clear();
+
+            foreach (var (job, data) in message.JobsAvailableByStation)
+            {
+                _jobsAvailable[job] = data;
+            }
+
+            _stationNames.Clear();
+            foreach (var weh in message.StationNames)
+            {
+                _stationNames[weh.Key] = weh.Value;
+            }
+
             LobbyJobsAvailableUpdated?.Invoke(JobsAvailable);
         }
 
@@ -78,16 +114,19 @@ namespace Content.Client.GameTicking.Managers
             _stateManager.RequestStateChange<LobbyState>();
         }
 
+        private void ConnectionStatus(TickerConnectionStatusEvent message)
+        {
+            RoundStartTimeSpan = message.RoundStartTimeSpan;
+        }
+
         private void LobbyStatus(TickerLobbyStatusEvent message)
         {
             StartTime = message.StartTime;
+            RoundStartTimeSpan = message.RoundStartTimeSpan;
             IsGameStarted = message.IsRoundStarted;
             AreWeReady = message.YouAreReady;
-            LobbySong = message.LobbySong;
             LobbyBackground = message.LobbyBackground;
             Paused = message.Paused;
-            if (IsGameStarted)
-                Status.Clear();
 
             LobbyStatusUpdated?.Invoke();
         }
@@ -101,7 +140,7 @@ namespace Content.Client.GameTicking.Managers
 
         private void JoinGame(TickerJoinGameEvent message)
         {
-            _stateManager.RequestStateChange<GameScreen>();
+            _stateManager.RequestStateChange<GameplayState>();
         }
 
         private void LobbyCountdown(TickerLobbyCountdownEvent message)
@@ -110,26 +149,12 @@ namespace Content.Client.GameTicking.Managers
             Paused = message.Paused;
         }
 
-        private void LobbyReady(TickerLobbyReadyEvent message)
-        {
-            // Merge the Dictionaries
-            foreach (var p in message.Status)
-            {
-                Status[p.Key] = p.Value;
-            }
-            LobbyReadyUpdated?.Invoke();
-        }
-
         private void RoundEnd(RoundEndMessageEvent message)
         {
-            if (message.LobbySong != null)
-            {
-                LobbySong = message.LobbySong;
-                Get<BackgroundAudioSystem>().StartLobbyMusic();
-            }
+            // Force an update in the event of this song being the same as the last.
+            RestartSound = message.RestartSound;
 
-            //This is not ideal at all, but I don't see an immediately better fit anywhere else.
-            var roundEnd = new RoundEndSummaryWindow(message.GamemodeTitle, message.RoundEndText, message.RoundDuration, message.RoundId, message.AllPlayersEndInfo);
+            _userInterfaceManager.GetUIController<RoundEndSummaryUIController>().OpenRoundEndSummaryWindow(message);
         }
     }
 }

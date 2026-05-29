@@ -1,4 +1,4 @@
-﻿using Content.Server.Administration;
+using Content.Server.Administration;
 using Content.Server.Atmos.EntitySystems;
 using Content.Shared.Administration;
 using Robust.Shared.Console;
@@ -7,26 +7,32 @@ using Robust.Shared.Map;
 namespace Content.Server.Atmos.Commands
 {
     [AdminCommand(AdminFlags.Debug)]
-    public sealed class RemoveGasCommand : IConsoleCommand
+    public sealed partial class RemoveGasCommand : IConsoleCommand
     {
+        [Dependency] private IEntityManager _entManager = default!;
+
         public string Command => "removegas";
         public string Description => "Removes an amount of gases.";
         public string Help => "removegas <X> <Y> <GridId> <amount> <ratio>\nIf <ratio> is true, amount will be treated as the ratio of gas to be removed.";
 
         public void Execute(IConsoleShell shell, string argStr, string[] args)
         {
-            if (args.Length < 5) return;
-            if(!int.TryParse(args[0], out var x)
+            if (args.Length < 5)
+                return;
+
+            if (!int.TryParse(args[0], out var x)
                || !int.TryParse(args[1], out var y)
-               || !int.TryParse(args[2], out var id)
+               || !NetEntity.TryParse(args[2], out var idNet)
+               || !_entManager.TryGetEntity(idNet, out var id)
                || !float.TryParse(args[3], out var amount)
-               || !bool.TryParse(args[4], out var ratio)) return;
+               || !bool.TryParse(args[4], out var ratio))
+            {
+                return;
+            }
 
-            var gridId = new GridId(id);
-
-            var atmosphereSystem = EntitySystem.Get<AtmosphereSystem>();
+            var atmosphereSystem = _entManager.System<AtmosphereSystem>();
             var indices = new Vector2i(x, y);
-            var tile = atmosphereSystem.GetTileMixture(gridId, indices, true);
+            var tile = atmosphereSystem.GetTileMixture(id, null, indices, true);
 
             if (tile == null)
             {

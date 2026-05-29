@@ -12,13 +12,13 @@ using Robust.Shared.Map;
 namespace Content.Client.NodeContainer
 {
     [UsedImplicitly]
-    public sealed class NodeGroupSystem : EntitySystem
+    public sealed partial class NodeGroupSystem : EntitySystem
     {
-        [Dependency] private readonly IOverlayManager _overlayManager = default!;
-        [Dependency] private readonly EntityLookupSystem _entityLookup = default!;
-        [Dependency] private readonly IMapManager _mapManager = default!;
-        [Dependency] private readonly IInputManager _inputManager = default!;
-        [Dependency] private readonly IResourceCache _resourceCache = default!;
+        [Dependency] private IOverlayManager _overlayManager = default!;
+        [Dependency] private EntityLookupSystem _entityLookup = default!;
+        [Dependency] private IMapManager _mapManager = default!;
+        [Dependency] private IInputManager _inputManager = default!;
+        [Dependency] private IResourceCache _resourceCache = default!;
 
         public bool VisEnabled { get; private set; }
 
@@ -69,7 +69,7 @@ namespace Content.Client.NodeContainer
 
             Entities = Groups.Values
                 .SelectMany(g => g.Nodes, (data, nodeData) => (data, nodeData))
-                .GroupBy(n => n.nodeData.Entity)
+                .GroupBy(n => GetEntity(n.nodeData.Entity))
                 .ToDictionary(g => g.Key, g => g.ToArray());
 
             NodeLookup = Groups.Values

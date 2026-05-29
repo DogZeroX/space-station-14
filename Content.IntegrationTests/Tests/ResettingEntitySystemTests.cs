@@ -1,19 +1,16 @@
-﻿using System.Threading.Tasks;
+﻿using Content.IntegrationTests.Fixtures;
 using Content.Server.GameTicking;
 using Content.Shared.GameTicking;
-using NUnit.Framework;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
 using Robust.Shared.Reflection;
 
 namespace Content.IntegrationTests.Tests
 {
     [TestFixture]
     [TestOf(typeof(RoundRestartCleanupEvent))]
-    public sealed class ResettingEntitySystemTests : ContentIntegrationTest
+    public sealed class ResettingEntitySystemTests : GameTest
     {
-        [Reflect(false)]
-        private sealed class TestRoundRestartCleanupEvent : EntitySystem
+        public sealed class TestRoundRestartCleanupEvent : EntitySystem
         {
             public bool HasBeenReset { get; set; }
 
@@ -30,18 +27,18 @@ namespace Content.IntegrationTests.Tests
             }
         }
 
+        public override PoolSettings PoolSettings => new PoolSettings
+        {
+            DummyTicker = false,
+            Connected = true,
+            Dirty = true
+        };
+
         [Test]
         public async Task ResettingEntitySystemResetTest()
         {
-            var server = StartServer(new ServerContentIntegrationOption
-            {
-                ContentBeforeIoC = () =>
-                {
-                    IoCManager.Resolve<IEntitySystemManager>().LoadExtraSystemType<TestRoundRestartCleanupEvent>();
-                }
-            });
-
-            await server.WaitIdleAsync();
+            var pair = Pair;
+            var server = pair.Server;
 
             var entitySystemManager = server.ResolveDependency<IEntitySystemManager>();
             var gameTicker = entitySystemManager.GetEntitySystem<GameTicker>();
@@ -54,11 +51,9 @@ namespace Content.IntegrationTests.Tests
 
                 system.HasBeenReset = false;
 
-                Assert.False(system.HasBeenReset);
-
                 gameTicker.RestartRound();
 
-                Assert.True(system.HasBeenReset);
+                Assert.That(system.HasBeenReset);
             });
         }
     }

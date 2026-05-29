@@ -5,7 +5,7 @@
         "y": 32
     },
     "license": "CC-BY-SA-3.0",
-    "copyright": "Taken from tgstation at commit https://github.com/tgstation/tgstation/commit/f8f4aeda930fcd0805ca4cc76d9bc9412a5b3428",
+    "copyright": "Taken from tgstation at commit https://github.com/tgstation/tgstation/commit/f8f4aeda930fcd0805ca4cc76d9bc9412a5b3428, cart_goldenplunger modified from cart_plunger by TiniestShark (github) and tweaked by Prole0 (github), cart_garbage_blue modified from cart_garbage by AndrewFenriz (github)",
     "states": [
         {
             "name": "cart",
@@ -16,7 +16,19 @@
             "directions": 4
         },
         {
+            "name": "cart_garbage_blue",
+            "directions": 4
+        },
+        {
             "name": "cart_mop",
+            "directions": 4
+        },
+        {
+            "name": "cart_advmop",
+            "directions": 4
+        },
+        {
+            "name": "cart_bucket",
             "directions": 4
         },
         {
@@ -43,8 +55,19 @@
             "name": "cart_spray",
             "directions": 4
         },
+		{
+            "name": "cart_plunger",
+            "directions": 4
+        },
         {
-            "name": "cart_water_1",
+            "name": "cart_goldenplunger",
+            "directions": 4
+        },
+        {
+            "name": "icon-cart"
+        },
+        {
+            "name": "cart_water-1",
             "directions": 4,
             "delays": [
                 [
@@ -70,7 +93,7 @@
             ]
         },
         {
-            "name": "cart_water_2",
+            "name": "cart_water-2",
             "directions": 4,
             "delays": [
                 [
@@ -96,7 +119,7 @@
             ]
         },
         {
-            "name": "cart_water_3",
+            "name": "cart_water-3",
             "directions": 4,
             "delays": [
                 [

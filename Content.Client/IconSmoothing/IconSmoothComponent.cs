@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
-using Robust.Shared.Map;
+using Robust.Client.Graphics;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
 namespace Content.Client.IconSmoothing
 {
@@ -12,26 +13,38 @@ namespace Content.Client.IconSmoothing
     ///     Any objects with the same <c>key</c> will connect.
     /// </remarks>
     [RegisterComponent]
-    public sealed class IconSmoothComponent : Component
+    public sealed partial class IconSmoothComponent : Component
     {
-        public (GridId, Vector2i)? LastPosition;
+        [ViewVariables(VVAccess.ReadWrite), DataField("enabled")]
+        public bool Enabled = true;
+
+        public (EntityUid?, Vector2i)? LastPosition;
 
         /// <summary>
         ///     We will smooth with other objects with the same key.
         /// </summary>
-        [DataField("key")]
-        public string? SmoothKey { get; }
+        [ViewVariables(VVAccess.ReadWrite), DataField("key")]
+        public string? SmoothKey { get; private set; }
+
+        /// <summary>
+        ///     Additional keys to smooth with.
+        /// </summary>
+        [DataField]
+        public List<string> AdditionalKeys = new();
 
         /// <summary>
         ///     Prepended to the RSI state.
         /// </summary>
-        [DataField("base")]
-        public string StateBase { get; } = string.Empty;
+        [ViewVariables(VVAccess.ReadWrite), DataField("base")]
+        public string StateBase { get; set; } = string.Empty;
+
+        [DataField("shader", customTypeSerializer:typeof(PrototypeIdSerializer<ShaderPrototype>))]
+        public string? Shader;
 
         /// <summary>
         ///     Mode that controls how the icon should be selected.
         /// </summary>
-        [DataField("mode")]
+        [ViewVariables(VVAccess.ReadWrite), DataField("mode")]
         public IconSmoothingMode Mode = IconSmoothingMode.Corners;
 
         /// <summary>
@@ -57,6 +70,11 @@ namespace Content.Client.IconSmoothing
         ///     The icon selected is a bit field made up of the cardinal direction flags that have adjacent entities.
         /// </summary>
         CardinalFlags,
+
+        /// <summary>
+        ///     The icon represents a triangular sprite with only 2 states, representing South / East being occupied or not.
+        /// </summary>
+        Diagonal,
 
         /// <summary>
         ///     Where this component contributes to our neighbors being calculated but we do not update our own sprite.

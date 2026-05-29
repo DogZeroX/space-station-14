@@ -1,21 +1,27 @@
 - type: entity
   id: CableTerminal
   name: cable terminal
+  description: You see a small warning on the red cables in grungy black ink. "CONNECT RED TO BATTERY FOR CHARGE."
   placement:
     mode: SnapgridCenter
   components:
     - type: Sprite
       sprite: Structures/Power/cable_terminal.rsi
       state: term
-      netsync: false
       drawdepth: BelowFloor
     - type: Clickable
     - type: InteractionOutline
+    - type: CollideOnAnchor
     - type: Transform
       anchored: true
     - type: Damageable
-      damageContainer: Inorganic
       damageModifierSet: Metallic
+    - type: Injurable
+      damageContainer: StructuralInorganic
+    - type: RCDDeconstructable
+      cost: 2
+      delay: 0
+      fx: EffectRCDConstruct0
     - type: Destructible
       thresholds:
         - trigger:
@@ -24,6 +30,9 @@
           behaviors:
             - !type:DoActsBehavior
               acts: ["Destruction"]
+    - type: Visibility
+      layer: 1
+    - type: Appearance
     - type: SubFloorHide
       blockAmbience: false
       blockInteractions: false
@@ -40,3 +49,11 @@
         powerMV:
           !type:CableTerminalNode
           nodeGroupID: MVPower
+
+- type: entity
+  id: CableTerminalUncuttable
+  parent: CableTerminal
+  suffix: uncuttable
+  components:
+  - type: Cable
+    cuttingQuality: null

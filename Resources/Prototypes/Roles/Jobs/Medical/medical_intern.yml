@@ -1,13 +1,16 @@
 ﻿- type: job
   id: MedicalIntern
-  name: "medical intern"
+  name: job-name-intern
+  description: job-description-intern
+  playTimeTracker: JobMedicalIntern
+  requirements:
+    - !type:DepartmentTimeRequirement
+      department: Medical
+      time: 10h
+      inverted: true # stop playing intern if you're good at med!
   startingGear: MedicalInternGear
-  departments:
-  - Civilian
-  - Medical
-  icon: "MedicalIntern"
-  supervisors: "medical doctors, chemists, and the chief medical officer"
-  canBeAntag: false
+  icon: "JobIconMedicalIntern"
+  supervisors: job-supervisors-medicine
   access:
   - Medical
   - Maintenance
@@ -15,12 +18,18 @@
 - type: startingGear
   id: MedicalInternGear
   equipment:
-    jumpsuit: ClothingUniformJumpsuitColorWhite
-    back: ClothingBackpackMedicalFilled
     shoes: ClothingShoesColorWhite
     id: MedicalInternPDA
     ears: ClothingHeadsetMedical
-    belt: ClothingBeltMedicalFilled
-  innerclothingskirt: ClothingUniformJumpskirtColorWhite
-  satchel: ClothingBackpackSatchelMedicalFilled
-  duffelbag: ClothingBackpackDuffelMedicalFilled
+    pocket2: BookMedicalReferenceBook
+
+- type: chameleonOutfit
+  id: MedicalInternChameleonOutfit
+  job: MedicalIntern
+  equipment:
+    head: ClothingHeadHatBeretMedic
+    eyes: ClothingEyesHudMedical
+    mask: ClothingMaskSterile
+    neck: ClothingNeckStethoscope
+    outerClothing: ClothingOuterCoatLabOpened
+    gloves: ClothingHandsGlovesLatex

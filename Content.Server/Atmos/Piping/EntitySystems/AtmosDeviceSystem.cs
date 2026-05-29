@@ -1,20 +1,25 @@
 using Content.Server.Atmos.EntitySystems;
-using Content.Server.Atmos.Piping.Components;
+using Content.Shared.Atmos.Components;
+using Content.Shared.Atmos.Piping.Components;
 using JetBrains.Annotations;
 using Robust.Shared.Timing;
+using Robust.Shared.Utility;
 
 namespace Content.Server.Atmos.Piping.EntitySystems
 {
     [UsedImplicitly]
-    public sealed class AtmosDeviceSystem : EntitySystem
+    public sealed partial class AtmosDeviceSystem : EntitySystem
     {
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
-        [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
+        [Dependency] private IGameTiming _gameTiming = default!;
+        [Dependency] private AtmosphereSystem _atmosphereSystem = default!;
 
-        private readonly AtmosDeviceUpdateEvent _updateEvent = new();
+        private float _timer;
 
-        private float _timer = 0f;
-        private readonly HashSet<AtmosDeviceComponent> _joinedDevices = new();
+        // Set of atmos devices that are off-grid but have JoinSystem set.
+        private readonly HashSet<Entity<AtmosDeviceComponent>> _joinedDevices = new();
+
+        private static AtmosDeviceDisabledEvent _disabledEv = new();
+        private static AtmosDeviceEnabledEvent _enabledEv = new();
 
         public override void Initialize()
         {
@@ -27,42 +32,40 @@ namespace Content.Server.Atmos.Piping.EntitySystems
             SubscribeLocalEvent<AtmosDeviceComponent, AnchorStateChangedEvent>(OnDeviceAnchorChanged);
         }
 
-        private bool CanJoinAtmosphere(AtmosDeviceComponent component)
+        public void JoinAtmosphere(Entity<AtmosDeviceComponent> ent)
         {
-            return !component.RequireAnchored || EntityManager.GetComponent<TransformComponent>(component.Owner).Anchored;
-        }
-
-        public void JoinAtmosphere(AtmosDeviceComponent component)
-        {
-            if (!CanJoinAtmosphere(component))
+            if (ent.Comp.JoinedGrid != null)
             {
+                DebugTools.Assert(HasComp<GridAtmosphereComponent>(ent.Comp.JoinedGrid));
+                DebugTools.Assert(Transform(ent).GridUid == ent.Comp.JoinedGrid);
+                DebugTools.Assert(ent.Comp.RequireAnchored == Transform(ent).Anchored);
                 return;
             }
 
-            // We try to add the device to a valid atmosphere, and if we can't, try to add it to the entity system.
-            if (!_atmosphereSystem.AddAtmosDevice(component))
+            var component = ent.Comp;
+            var transform = Transform(ent);
+
+            if (component.RequireAnchored && !transform.Anchored)
+                return;
+
+            // Attempt to add device to a grid atmosphere.
+            bool onGrid = (transform.GridUid != null) && _atmosphereSystem.AddAtmosDevice(transform.GridUid!.Value, ent);
+
+            if (!onGrid && component.JoinSystem)
             {
-                if (component.JoinSystem)
-                {
-                    _joinedDevices.Add(component);
-                    component.JoinedSystem = true;
-                }
-                else
-                {
-                    return;
-                }
+                _joinedDevices.Add(ent);
+                component.JoinedSystem = true;
             }
 
-
             component.LastProcess = _gameTiming.CurTime;
-
-            RaiseLocalEvent(component.Owner, new AtmosDeviceEnabledEvent(), false);
+            RaiseLocalEvent(ent, ref _enabledEv);
         }
 
-        public void LeaveAtmosphere(AtmosDeviceComponent component)
+        public void LeaveAtmosphere(Entity<AtmosDeviceComponent> ent)
         {
+            var component = ent.Comp;
             // Try to remove the component from an atmosphere, and if not
-            if (component.JoinedGrid != null && !_atmosphereSystem.RemoveAtmosDevice(component))
+            if (component.JoinedGrid != null && !_atmosphereSystem.RemoveAtmosDevice(component.JoinedGrid.Value, ent))
             {
                 // The grid might have been removed but not us... This usually shouldn't happen.
                 component.JoinedGrid = null;
@@ -71,47 +74,57 @@ namespace Content.Server.Atmos.Piping.EntitySystems
 
             if (component.JoinedSystem)
             {
-                _joinedDevices.Remove(component);
+                _joinedDevices.Remove(ent);
                 component.JoinedSystem = false;
             }
 
             component.LastProcess = TimeSpan.Zero;
-            RaiseLocalEvent(component.Owner, new AtmosDeviceDisabledEvent(), false);
+            RaiseLocalEvent(ent, ref _disabledEv);
         }
 
-        public void RejoinAtmosphere(AtmosDeviceComponent component)
+        public void RejoinAtmosphere(Entity<AtmosDeviceComponent> component)
         {
             LeaveAtmosphere(component);
             JoinAtmosphere(component);
         }
 
-        private void OnDeviceInitialize(EntityUid uid, AtmosDeviceComponent component, ComponentInit args)
+        private void OnDeviceInitialize(Entity<AtmosDeviceComponent> ent, ref ComponentInit args)
         {
-            JoinAtmosphere(component);
+            JoinAtmosphere(ent);
         }
 
-        private void OnDeviceShutdown(EntityUid uid, AtmosDeviceComponent component, ComponentShutdown args)
+        private void OnDeviceShutdown(Entity<AtmosDeviceComponent> ent, ref ComponentShutdown args)
         {
-            LeaveAtmosphere(component);
+            LeaveAtmosphere(ent);
         }
 
-        private void OnDeviceAnchorChanged(EntityUid uid, AtmosDeviceComponent component, ref AnchorStateChangedEvent args)
+        private void OnDeviceAnchorChanged(Entity<AtmosDeviceComponent> ent, ref AnchorStateChangedEvent args)
         {
             // Do nothing if the component doesn't require being anchored to function.
-            if (!component.RequireAnchored)
+            if (!ent.Comp.RequireAnchored)
                 return;
 
             if (args.Anchored)
-                JoinAtmosphere(component);
+                JoinAtmosphere(ent);
             else
-                LeaveAtmosphere(component);
+                LeaveAtmosphere(ent);
         }
 
-        private void OnDeviceParentChanged(EntityUid uid, AtmosDeviceComponent component, ref EntParentChangedMessage args)
+        private void OnDeviceParentChanged(Entity<AtmosDeviceComponent> ent, ref EntParentChangedMessage args)
         {
-            RejoinAtmosphere(component);
+            // Event is raised when a map is loaded in. Since this event mutates comp.Enabled,
+            // it will overwrite whatever saved value it had
+            // (so devices saved as enabled will just be disabled).
+            if (args.OldParent is null)
+                return;
+
+            RejoinAtmosphere(ent);
         }
 
+        /// <summary>
+        /// Update atmos devices that are off-grid but have JoinSystem set. For devices updates when
+        /// a device is on a grid, see AtmosphereSystem:UpdateProcessing().
+        /// </summary>
         public override void Update(float frameTime)
         {
             _timer += frameTime;
@@ -122,11 +135,22 @@ namespace Content.Server.Atmos.Piping.EntitySystems
             _timer -= _atmosphereSystem.AtmosTime;
 
             var time = _gameTiming.CurTime;
+            var ev = new AtmosDeviceUpdateEvent(_atmosphereSystem.AtmosTime, null, null);
             foreach (var device in _joinedDevices)
             {
-                RaiseLocalEvent(device.Owner, _updateEvent, false);
-                device.LastProcess = time;
+                var deviceGrid = Transform(device).GridUid;
+                if (HasComp<GridAtmosphereComponent>(deviceGrid))
+                {
+                    RejoinAtmosphere(device);
+                }
+                RaiseLocalEvent(device, ref ev);
+                device.Comp.LastProcess = time;
             }
+        }
+
+        public bool IsJoinedOffGrid(Entity<AtmosDeviceComponent> device)
+        {
+            return _joinedDevices.Contains(device);
         }
     }
 }

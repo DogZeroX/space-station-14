@@ -1,4 +1,4 @@
-﻿using Content.Server.Popups;
+using Content.Server.Popups;
 using Content.Shared.Construction;
 using JetBrains.Annotations;
 using Robust.Shared.Player;
@@ -7,10 +7,10 @@ namespace Content.Server.Construction.Completions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class PopupUser : IGraphAction
+    public sealed partial class PopupUser : IGraphAction
     {
-        [DataField("cursor")] public bool Cursor { get; } = false;
-        [DataField("text")] public string Text { get; } = string.Empty;
+        [DataField("cursor")] public bool Cursor { get; private set; }
+        [DataField("text")] public string Text { get; private set; } = string.Empty;
 
         public void PerformAction(EntityUid uid, EntityUid? userUid, IEntityManager entityManager)
         {
@@ -20,9 +20,9 @@ namespace Content.Server.Construction.Completions
             var popupSystem = entityManager.EntitySysManager.GetEntitySystem<PopupSystem>();
 
             if(Cursor)
-                popupSystem.PopupCursor(Loc.GetString(Text), Filter.Entities(userUid.Value));
+                popupSystem.PopupCursor(Loc.GetString(Text), userUid.Value);
             else
-                popupSystem.PopupEntity(Loc.GetString(Text), uid, Filter.Entities(userUid.Value));
+                popupSystem.PopupEntity(Loc.GetString(Text), uid, userUid.Value);
         }
     }
 }

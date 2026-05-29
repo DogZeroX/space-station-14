@@ -1,31 +1,19 @@
-using Content.Shared.Atmos;
+namespace Content.Server.Atmos.Piping.Binary.Components;
 
-namespace Content.Server.Atmos.Piping.Binary.Components
+/// <summary>
+/// Defines a passive gate, which equalizes gas from
+/// inlet to outlet, but does not allow gas to flow from outlet to inlet.
+/// </summary>
+[RegisterComponent]
+public sealed partial class GasPassiveGateComponent : Component
 {
-    [RegisterComponent]
-    public sealed class GasPassiveGateComponent : Component
-    {
-        [DataField("enabled")]
-        [ViewVariables(VVAccess.ReadWrite)]
-        public bool Enabled { get; set; } = true;
+    [DataField("inlet")]
+    public string InletName = "inlet";
 
-        /// <summary>
-        ///     This is the minimum difference needed to overcome the friction in the mechanism.
-        /// </summary>
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("frictionDifference")]
-        public float FrictionPressureDifference { get; set; } = 10f;
+    [DataField("outlet")]
+    public string OutletName = "outlet";
 
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("inlet")]
-        public string InletName { get; set; } = "inlet";
-
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("outlet")]
-        public string OutletName { get; set; } = "outlet";
-
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("targetPressure")]
-        public float TargetPressure { get; set; } = Atmospherics.OneAtmosphere;
-    }
+    [ViewVariables(VVAccess.ReadOnly)]
+    [DataField]
+    public float FlowRate;
 }

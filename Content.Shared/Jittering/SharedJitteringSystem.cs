@@ -1,5 +1,5 @@
+using Content.Shared.Rejuvenate;
 using Content.Shared.StatusEffect;
-using Robust.Shared.GameStates;
 using Robust.Shared.Timing;
 
 namespace Content.Shared.Jittering
@@ -7,10 +7,10 @@ namespace Content.Shared.Jittering
     /// <summary>
     ///     A system for applying a jitter animation to any entity.
     /// </summary>
-    public abstract class SharedJitteringSystem : EntitySystem
+    public abstract partial class SharedJitteringSystem : EntitySystem
     {
-        [Dependency] protected readonly IGameTiming GameTiming = default!;
-        [Dependency] protected readonly StatusEffectsSystem StatusEffects = default!;
+        [Dependency] protected IGameTiming GameTiming = default!;
+        [Dependency] protected StatusEffectsSystem StatusEffects = default!;
 
         public float MaxAmplitude = 300f;
         public float MinAmplitude = 1f;
@@ -20,22 +20,12 @@ namespace Content.Shared.Jittering
 
         public override void Initialize()
         {
-            SubscribeLocalEvent<JitteringComponent, ComponentGetState>(OnGetState);
-            SubscribeLocalEvent<JitteringComponent, ComponentHandleState>(OnHandleState);
+            SubscribeLocalEvent<JitteringComponent, RejuvenateEvent>(OnRejuvenate);
         }
 
-        private void OnGetState(EntityUid uid, JitteringComponent component, ref ComponentGetState args)
+        private void OnRejuvenate(EntityUid uid, JitteringComponent component, RejuvenateEvent args)
         {
-            args.State = new JitteringComponentState(component.Amplitude, component.Frequency);
-        }
-
-        private void OnHandleState(EntityUid uid, JitteringComponent component, ref ComponentHandleState args)
-        {
-            if (args.Current is not JitteringComponentState jitteringState)
-                return;
-
-            component.Amplitude = jitteringState.Amplitude;
-            component.Frequency = jitteringState.Frequency;
+            RemCompDeferred<JitteringComponent>(uid);
         }
 
         /// <summary>
@@ -64,7 +54,7 @@ namespace Content.Shared.Jittering
 
             if (StatusEffects.TryAddStatusEffect<JitteringComponent>(uid, "Jitter", time, refresh, status))
             {
-                var jittering = EntityManager.GetComponent<JitteringComponent>(uid);
+                var jittering = Comp<JitteringComponent>(uid);
 
                 if(forceValueChange || jittering.Amplitude < amplitude)
                     jittering.Amplitude = amplitude;
@@ -72,6 +62,17 @@ namespace Content.Shared.Jittering
                 if (forceValueChange || jittering.Frequency < frequency)
                     jittering.Frequency = frequency;
             }
+        }
+
+        /// <summary>
+        /// For non mobs.
+        /// </summary>
+        public void AddJitter(EntityUid uid, float amplitude = 10f, float frequency = 4f)
+        {
+            var jitter = EnsureComp<JitteringComponent>(uid);
+            jitter.Amplitude = amplitude;
+            jitter.Frequency = frequency;
+            Dirty(uid, jitter);
         }
     }
 }

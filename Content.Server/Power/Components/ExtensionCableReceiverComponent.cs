@@ -3,11 +3,11 @@
 namespace Content.Server.Power.Components
 {
     [RegisterComponent]
-    [Friend(typeof(ExtensionCableSystem))]
-    public sealed class ExtensionCableReceiverComponent : Component
+    [Access(typeof(ExtensionCableSystem))]
+    public sealed partial class ExtensionCableReceiverComponent : Component
     {
         [ViewVariables]
-        public ExtensionCableProviderComponent? Provider { get; set; }
+        public Entity<ExtensionCableProviderComponent>? Provider { get; set; }
 
         [ViewVariables]
         public bool Connectable = false;

@@ -1,4 +1,5 @@
 using Content.Shared.Clothing.EntitySystems;
+using Robust.Shared.GameStates;
 
 namespace Content.Shared.Clothing.Components;
 
@@ -8,13 +9,13 @@ namespace Content.Shared.Clothing.Components;
 ///     attached to, rather than being dumped on the floor or something like that. Intended for use with hardsuits and
 ///     hardsuit helmets.
 /// </summary>
-[Friend(typeof(ToggleableClothingSystem))]
-[RegisterComponent]
-public sealed class AttachedClothingComponent : Component
+[Access(typeof(ToggleableClothingSystem))]
+[RegisterComponent, NetworkedComponent, AutoGenerateComponentState]
+public sealed partial class AttachedClothingComponent : Component
 {
     /// <summary>
     ///     The Id of the piece of clothing that this entity belongs to.
     /// </summary>
-    [DataField("AttachedUid")]
-    public EntityUid AttachedUid = default!;
+    [DataField, AutoNetworkedField]
+    public EntityUid AttachedUid;
 }

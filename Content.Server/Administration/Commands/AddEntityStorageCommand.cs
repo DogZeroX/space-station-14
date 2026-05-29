@@ -1,12 +1,15 @@
-using Content.Server.Storage.Components;
+using Content.Shared.Storage.Components;
+using Content.Server.Storage.EntitySystems;
 using Content.Shared.Administration;
 using Robust.Shared.Console;
 
 namespace Content.Server.Administration.Commands
 {
-    [AdminCommand(AdminFlags.Fun)]
-    public sealed class AddEntityStorageCommand : IConsoleCommand
+    [AdminCommand(AdminFlags.Admin)]
+    public sealed partial class AddEntityStorageCommand : IConsoleCommand
     {
+        [Dependency] private IEntityManager _entManager = default!;
+
         public string Command => "addstorage";
         public string Description => "Adds a given entity to a containing storage.";
         public string Help => "Usage: addstorage <entity uid> <storage uid>";
@@ -19,23 +22,22 @@ namespace Content.Server.Administration.Commands
                 return;
             }
 
-            if (!EntityUid.TryParse(args[0], out var entityUid))
+            if (!NetEntity.TryParse(args[0], out var entityUidNet) || !_entManager.TryGetEntity(entityUidNet, out var entityUid))
             {
                 shell.WriteError(Loc.GetString("shell-entity-uid-must-be-number"));
                 return;
             }
 
-            if (!EntityUid.TryParse(args[1], out var storageUid))
+            if (!NetEntity.TryParse(args[1], out var storageUidNet) || !_entManager.TryGetEntity(storageUidNet, out var storageUid))
             {
                 shell.WriteError(Loc.GetString("shell-entity-uid-must-be-number"));
                 return;
             }
 
-            var entityManager = IoCManager.Resolve<IEntityManager>();
-
-            if (entityManager.TryGetComponent<EntityStorageComponent>(storageUid, out var storage))
+            if (_entManager.HasComponent<EntityStorageComponent>(storageUid) &&
+                _entManager.EntitySysManager.TryGetEntitySystem<EntityStorageSystem>(out var storageSys))
             {
-                storage.Insert(entityUid);
+                storageSys.Insert(entityUid.Value, storageUid.Value);
             }
             else
             {

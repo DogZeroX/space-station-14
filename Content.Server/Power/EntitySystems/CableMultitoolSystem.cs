@@ -3,6 +3,9 @@ using Content.Server.Power.Components;
 using Content.Server.Power.NodeGroups;
 using Content.Server.Tools;
 using Content.Shared.Examine;
+using Content.Shared.Interaction;
+using Content.Shared.NodeContainer;
+using Content.Shared.Tools.Systems;
 using Content.Shared.Verbs;
 using JetBrains.Annotations;
 using Robust.Shared.Utility;
@@ -10,17 +13,28 @@ using Robust.Shared.Utility;
 namespace Content.Server.Power.EntitySystems
 {
     [UsedImplicitly]
-    public sealed class CableMultitoolSystem : EntitySystem
+    public sealed partial class CableMultitoolSystem : EntitySystem
     {
-        [Dependency] private readonly ToolSystem _toolSystem = default!;
-        [Dependency] private readonly PowerNetSystem _pnSystem = default!;
-        [Dependency] private readonly ExamineSystemShared _examineSystem = default!;
+        [Dependency] private ToolSystem _toolSystem = default!;
+        [Dependency] private PowerNetSystem _pnSystem = default!;
+        [Dependency] private ExamineSystemShared _examineSystem = default!;
 
         public override void Initialize()
         {
             base.Initialize();
 
             SubscribeLocalEvent<CableComponent, GetVerbsEvent<ExamineVerb>>(OnGetExamineVerbs);
+            SubscribeLocalEvent<CableComponent, AfterInteractUsingEvent>(OnAfterInteractUsing);
+        }
+
+        private void OnAfterInteractUsing(EntityUid uid, CableComponent component, AfterInteractUsingEvent args)
+        {
+            if (args.Handled || args.Target == null || !args.CanReach || !_toolSystem.HasQuality(args.Used, SharedToolSystem.PulseQuality))
+                return;
+
+            var markup = FormattedMessage.FromMarkupOrThrow(GenerateCableMarkup(uid));
+            _examineSystem.SendExamineTooltip(args.User, uid, markup, false, false);
+            args.Handled = true;
         }
 
         private void OnGetExamineVerbs(EntityUid uid, CableComponent component, GetVerbsEvent<ExamineVerb> args)
@@ -33,17 +47,17 @@ namespace Content.Server.Power.EntitySystems
 
                 // Pulsing is hardcoded here because I don't think it needs to be more complex than that right now.
                 // Update if I'm wrong.
-                var enabled = held != null && _toolSystem.HasQuality(held.Value, "Pulsing");
+                var enabled = held != null && _toolSystem.HasQuality(held.Value, SharedToolSystem.PulseQuality);
                 var verb = new ExamineVerb
                 {
                     Disabled = !enabled,
                     Message = Loc.GetString("cable-multitool-system-verb-tooltip"),
                     Text = Loc.GetString("cable-multitool-system-verb-name"),
                     Category = VerbCategory.Examine,
-                    IconTexture = "/Textures/Interface/VerbIcons/zap.svg.192dpi.png",
+                    Icon = new SpriteSpecifier.Texture(new ("/Textures/Interface/VerbIcons/zap.svg.192dpi.png")),
                     Act = () =>
                     {
-                        var markup = FormattedMessage.FromMarkup(GenerateCableMarkup(uid));
+                        var markup = FormattedMessage.FromMarkupOrThrow(GenerateCableMarkup(uid));
                         _examineSystem.SendExamineTooltip(args.User, uid, markup, false, false);
                     }
                 };

@@ -1,54 +1,58 @@
 using Content.Server.Atmos.EntitySystems;
 using Content.Server.Atmos.Piping.Binary.Components;
-using Content.Server.Atmos.Piping.Components;
-using Content.Server.NodeContainer;
+using Content.Server.NodeContainer.EntitySystems;
 using Content.Server.NodeContainer.Nodes;
-using Content.Shared.Atmos;
+using Content.Shared.Atmos.Components;
+using Content.Shared.Examine;
 using JetBrains.Annotations;
 
-namespace Content.Server.Atmos.Piping.Binary.EntitySystems
+namespace Content.Server.Atmos.Piping.Binary.EntitySystems;
+
+[UsedImplicitly]
+public sealed partial class GasPassiveGateSystem : EntitySystem
 {
-    [UsedImplicitly]
-    public sealed class GasPassiveGateSystem : EntitySystem
+    [Dependency] private AtmosphereSystem _atmosphereSystem = default!;
+    [Dependency] private NodeContainerSystem _nodeContainer = default!;
+
+    public override void Initialize()
     {
-        [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
+        base.Initialize();
 
-        public override void Initialize()
+        SubscribeLocalEvent<GasPassiveGateComponent, AtmosDeviceUpdateEvent>(OnPassiveGateUpdated);
+        SubscribeLocalEvent<GasPassiveGateComponent, ExaminedEvent>(OnExamined);
+    }
+
+    private void OnPassiveGateUpdated(EntityUid uid, GasPassiveGateComponent gate, ref AtmosDeviceUpdateEvent args)
+    {
+        if (!_nodeContainer.TryGetNodes(uid, gate.InletName, gate.OutletName, out PipeNode? inlet, out PipeNode? outlet))
+            return;
+
+        // ReSharper disable thrice InconsistentNaming
+        var P1 = inlet.Air.Pressure;
+        var P2 = outlet.Air.Pressure;
+        var V1 = inlet.Air.Volume;
+        var pressureDelta = P1 - P2;
+
+        var dt = args.dt;
+        float dV = 0;
+        if (pressureDelta > 0 && P1 > 0)
         {
-            base.Initialize();
+            var transferFrac = _atmosphereSystem.FractionToEqualizePressure(inlet.Air, outlet.Air);
+            dV = transferFrac * V1;
 
-            SubscribeLocalEvent<GasPassiveGateComponent, AtmosDeviceUpdateEvent>(OnPassiveGateUpdated);
+            // Actually transfer the gas.
+            _atmosphereSystem.Merge(outlet.Air, inlet.Air.RemoveRatio(transferFrac));
         }
 
-        private void OnPassiveGateUpdated(EntityUid uid, GasPassiveGateComponent gate, AtmosDeviceUpdateEvent args)
-        {
-            if (!gate.Enabled)
-                return;
+        gate.FlowRate = AtmosphereSystem.ExponentialMovingAverage(dV, gate.FlowRate, dt);
+    }
 
-            if (!EntityManager.TryGetComponent(uid, out NodeContainerComponent? nodeContainer))
-                return;
+    private void OnExamined(Entity<GasPassiveGateComponent> gate, ref ExaminedEvent args)
+    {
+        if (!Transform(gate).Anchored || !args.IsInDetailsRange) // Not anchored? Out of range? No status.
+            return;
 
-            if (!nodeContainer.TryGetNode(gate.InletName, out PipeNode? inlet)
-                || !nodeContainer.TryGetNode(gate.OutletName, out PipeNode? outlet))
-                return;
-
-            var outputStartingPressure = outlet.Air.Pressure;
-            var inputStartingPressure = inlet.Air.Pressure;
-
-            if (outputStartingPressure >= MathF.Min(gate.TargetPressure, inputStartingPressure - gate.FrictionPressureDifference))
-                return; // No need to pump gas, target reached or input pressure too low.
-
-            if (inlet.Air.TotalMoles > 0 && inlet.Air.Temperature > 0)
-            {
-                // We calculate the necessary moles to transfer using our good ol' friend PV=nRT.
-                var pressureDelta = MathF.Min(gate.TargetPressure - outputStartingPressure, (inputStartingPressure - outputStartingPressure)/2);
-                // We can't have a pressure delta that would cause outlet pressure > inlet pressure.
-
-                var transferMoles = pressureDelta * outlet.Air.Volume / (inlet.Air.Temperature * Atmospherics.R);
-
-                // Actually transfer the gas.
-                _atmosphereSystem.Merge(outlet.Air, inlet.Air.Remove(transferMoles));
-            }
-        }
+        var str = Loc.GetString("gas-passive-gate-examined", ("flowRate", $"{gate.Comp.FlowRate:0.#}"));
+        args.PushMarkup(str);
     }
 }

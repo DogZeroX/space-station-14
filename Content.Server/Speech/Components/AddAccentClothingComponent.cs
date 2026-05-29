@@ -1,4 +1,5 @@
-﻿using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+﻿using Content.Server.Speech.Prototypes;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
 namespace Content.Server.Speech.Components;
 
@@ -6,7 +7,7 @@ namespace Content.Server.Speech.Components;
 ///     Applies accent to user while they wear entity as a clothing.
 /// </summary>
 [RegisterComponent]
-public sealed class AddAccentClothingComponent : Component
+public sealed partial class AddAccentClothingComponent : Component
 {
     /// <summary>
     ///     Component name for accent that will be applied.

@@ -1,5 +1,8 @@
+using System.Numerics;
 using Content.Shared.Atmos;
-using Robust.Shared.Map;
+using Content.Shared.FixedPoint;
+using Robust.Shared.Map.Components;
+using static Content.Server.Explosion.Components.ExplosionAirtightGridComponent;
 using static Content.Server.Explosion.EntitySystems.ExplosionSystem;
 
 namespace Content.Server.Explosion.EntitySystems;
@@ -9,10 +12,12 @@ namespace Content.Server.Explosion.EntitySystems;
 /// </summary>
 public sealed class ExplosionGridTileFlood : ExplosionTileFlood
 {
-    public IMapGrid Grid;
+    private readonly ExplosionSystem _explosionSystem;
+
+    public Entity<MapGridComponent> Grid;
     private bool _needToTransform = false;
 
-    private Matrix3 _matrix = Matrix3.Identity;
+    private Matrix3x2 _matrix = Matrix3x2.Identity;
     private Vector2 _offset;
 
     // Tiles which neighbor an exploding tile, but have not yet had the explosion spread to them due to an
@@ -35,15 +40,16 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
     private Dictionary<Vector2i, NeighborFlag> _edgeTiles;
 
     public ExplosionGridTileFlood(
-        IMapGrid grid,
+        Entity<MapGridComponent> grid,
         Dictionary<Vector2i, TileData> airtightMap,
         float maxIntensity,
         float intensityStepSize,
         int typeIndex,
         Dictionary<Vector2i, NeighborFlag> edgeTiles,
-        GridId? referenceGrid,
-        Matrix3 spaceMatrix,
-        Angle spaceAngle)
+        EntityUid? referenceGrid,
+        Matrix3x2 spaceMatrix,
+        Angle spaceAngle,
+        ExplosionSystem explosionSystem)
     {
         Grid = grid;
         _airtightMap = airtightMap;
@@ -51,6 +57,7 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
         _intensityStepSize = intensityStepSize;
         _typeIndex = typeIndex;
         _edgeTiles = edgeTiles;
+        _explosionSystem = explosionSystem;
 
         // initialise SpaceTiles
         foreach (var (tile, spaceNeighbors) in _edgeTiles)
@@ -63,18 +70,23 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
             }
         }
 
-        if (referenceGrid == Grid.Index)
+        if (referenceGrid == Grid.Owner)
             return;
 
         _needToTransform = true;
-        var transform = IoCManager.Resolve<IEntityManager>().GetComponent<TransformComponent>(Grid.GridEntityId);
-        var size = (float) Grid.TileSize;
+        var entityManager = IoCManager.Resolve<IEntityManager>();
 
-        _matrix.R0C2 = size / 2;
-        _matrix.R1C2 = size / 2;
-        _matrix *= transform.WorldMatrix * Matrix3.Invert(spaceMatrix);
-        var relativeAngle = transform.WorldRotation - spaceAngle;
-        _offset = relativeAngle.RotateVec((size / 4, size / 4));
+        var transformSystem = entityManager.System<SharedTransformSystem>();
+        var transform = entityManager.GetComponent<TransformComponent>(Grid.Owner);
+        var size = (float)Grid.Comp.TileSize;
+
+        _matrix.M31 = size / 2;
+        _matrix.M32 = size / 2;
+        Matrix3x2.Invert(spaceMatrix, out var invSpace);
+        var (_, relativeAngle, worldMatrix) = transformSystem.GetWorldPositionRotationMatrix(transform);
+        relativeAngle -= spaceAngle;
+        _matrix *= worldMatrix * invSpace;
+        _offset = relativeAngle.RotateVec(new Vector2(size / 4, size / 4));
     }
 
     public override void InitTile(Vector2i initialTile)
@@ -179,14 +191,18 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
             if (EnteredBlockedTiles.Contains(tile))
                 return;
 
-            // Did the explosion already attempt to enter this tile from some other direction? 
+            // Did the explosion already attempt to enter this tile from some other direction?
             if (!UnenteredBlockedTiles.Add(tile))
                 return;
 
             NewBlockedTiles.Add(tile);
 
             // At what explosion iteration would this blocker be destroyed?
-            var clearIteration = iteration + (int) MathF.Ceiling(tileData.ExplosionTolerance[_typeIndex] / _intensityStepSize);
+            var required = _explosionSystem.GetToleranceValues(tileData.ToleranceCacheIndex).Values[_typeIndex];
+            if (required > _maxIntensity)
+                return; // blocker is never destroyed.
+
+            var clearIteration = iteration + (int) MathF.Ceiling((float)required / _intensityStepSize);
             if (FreedTileLists.TryGetValue(clearIteration, out var list))
                 list.Add(tile);
             else
@@ -199,7 +215,7 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
         if (!EnteredBlockedTiles.Add(tile))
             return;
 
-        // Did the explosion already attempt to enter this tile from some other direction? 
+        // Did the explosion already attempt to enter this tile from some other direction?
         if (UnenteredBlockedTiles.Contains(tile))
         {
             NewFreedTiles.Add(tile);
@@ -222,7 +238,7 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
             return;
         }
 
-        var center = _matrix.Transform(tile);
+        var center = Vector2.Transform(tile, _matrix);
         SpaceJump.Add(new((int) MathF.Floor(center.X + _offset.X), (int) MathF.Floor(center.Y + _offset.Y)));
         SpaceJump.Add(new((int) MathF.Floor(center.X - _offset.Y), (int) MathF.Floor(center.Y + _offset.X)));
         SpaceJump.Add(new((int) MathF.Floor(center.X - _offset.X), (int) MathF.Floor(center.Y - _offset.Y)));
@@ -250,13 +266,13 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
         foreach (var tile in tiles)
         {
             var blockedDirections = AtmosDirection.Invalid;
-            float sealIntegrity = 0;
+            FixedPoint2 sealIntegrity = 0;
 
             // Note that if (grid, tile) is not a valid key, then airtight.BlockedDirections will default to 0 (no blocked directions)
             if (_airtightMap.TryGetValue(tile, out var tileData))
             {
                 blockedDirections = tileData.BlockedDirections;
-                sealIntegrity = tileData.ExplosionTolerance[_typeIndex];
+                sealIntegrity = _explosionSystem.GetToleranceValues(tileData.ToleranceCacheIndex).Values[_typeIndex];
             }
 
             // First, yield any neighboring tiles that are not blocked by airtight entities on this tile
@@ -265,7 +281,7 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
                 var direction = (AtmosDirection) (1 << i);
                 if (ignoreTileBlockers || !blockedDirections.IsFlagSet(direction))
                 {
-                    ProcessNewTile(iteration, tile.Offset(direction), direction.GetOpposite());
+                    ProcessNewTile(iteration, tile.Offset(direction), i.ToOppositeDir());
                 }
             }
 
@@ -275,11 +291,11 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
 
             // This tile has one or more airtight entities anchored to it blocking the explosion from traveling in
             // some directions. First, check whether this blocker can even be destroyed by this explosion?
-            if (sealIntegrity > _maxIntensity || float.IsNaN(sealIntegrity))
+            if (sealIntegrity > _maxIntensity)
                 continue;
 
             // At what explosion iteration would this blocker be destroyed?
-            var clearIteration = iteration + (int) MathF.Ceiling(sealIntegrity / _intensityStepSize);
+            var clearIteration = iteration + (int) MathF.Ceiling((float) sealIntegrity / _intensityStepSize);
 
             // Get the delayed neighbours list
             if (!_delayedNeighbors.TryGetValue(clearIteration, out var list))
@@ -294,7 +310,7 @@ public sealed class ExplosionGridTileFlood : ExplosionTileFlood
                 var direction = (AtmosDirection) (1 << i);
                 if (blockedDirections.IsFlagSet(direction))
                 {
-                    list.Add((tile.Offset(direction), direction.GetOpposite()));
+                    list.Add((tile.Offset(direction), i.ToOppositeDir()));
                 }
             }
         }

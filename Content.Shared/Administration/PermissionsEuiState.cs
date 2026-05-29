@@ -18,6 +18,7 @@ namespace Content.Shared.Administration
             public NetUserId UserId;
             public string? UserName;
             public string? Title;
+            public bool Suspended;
             public AdminFlags PosFlags;
             public AdminFlags NegFlags;
             public int? RankId;
@@ -34,11 +35,6 @@ namespace Content.Shared.Administration
     public static class PermissionsEuiMsg
     {
         [Serializable, NetSerializable]
-        public sealed class Close : EuiMessageBase
-        {
-        }
-
-        [Serializable, NetSerializable]
         public sealed class AddAdmin : EuiMessageBase
         {
             public string UserNameOrId = string.Empty;
@@ -46,6 +42,7 @@ namespace Content.Shared.Administration
             public AdminFlags PosFlags;
             public AdminFlags NegFlags;
             public int? RankId;
+            public bool Suspended;
         }
 
         [Serializable, NetSerializable]
@@ -62,6 +59,7 @@ namespace Content.Shared.Administration
             public AdminFlags PosFlags;
             public AdminFlags NegFlags;
             public int? RankId;
+            public bool Suspended;
         }
 
 

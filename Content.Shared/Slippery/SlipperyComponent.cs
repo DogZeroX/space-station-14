@@ -1,7 +1,5 @@
-using System.Linq;
-using Content.Shared.Sound;
-using Content.Shared.Sound;
-using Content.Shared.StepTrigger;
+using Content.Shared.StepTrigger.Components;
+using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
 using Robust.Shared.Serialization;
 
@@ -13,93 +11,89 @@ namespace Content.Shared.Slippery
     /// <remarks>
     /// Requires <see cref="StepTriggerComponent"/>, see that component for some additional properties.
     /// </remarks>
-    [RegisterComponent]
-    [NetworkedComponent]
-    public sealed class SlipperyComponent : Component
+    [RegisterComponent, NetworkedComponent, AutoGenerateComponentState]
+    public sealed partial class SlipperyComponent : Component
     {
-        private float _paralyzeTime = 3f;
-        private float _launchForwardsMultiplier = 1f;
-        private SoundSpecifier _slipSound = new SoundPathSpecifier("/Audio/Effects/slip.ogg");
+        /// <summary>
+        /// Path to the sound to be played when a mob slips.
+        /// </summary>
+        [DataField, AutoNetworkedField]
+        [Access(Other = AccessPermissions.ReadWriteExecute)]
+        public SoundSpecifier SlipSound = new SoundPathSpecifier("/Audio/Effects/slip.ogg");
 
         /// <summary>
-        ///     Path to the sound to be played when a mob slips.
+        /// Should this component's friction factor into sliding friction?
         /// </summary>
-        [ViewVariables]
-        [DataField("slipSound")]
-        public SoundSpecifier SlipSound
-        {
-            get => _slipSound;
-            set
-            {
-                if (value == _slipSound)
-                    return;
-
-                _slipSound = value;
-                Dirty();
-            }
-        }
+        [DataField, AutoNetworkedField]
+        public bool AffectsSliding;
 
         /// <summary>
-        ///     How many seconds the mob will be paralyzed for.
+        /// How long should this component apply the FrictionStatusComponent?
+        /// Note: This does stack with SlidingComponent since they are two separate Components
         /// </summary>
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("paralyzeTime")]
-        public float ParalyzeTime
-        {
-            get => _paralyzeTime;
-            set
-            {
-                if (MathHelper.CloseToPercent(_paralyzeTime, value)) return;
-
-                _paralyzeTime = value;
-                Dirty();
-            }
-        }
+        [DataField, AutoNetworkedField]
+        public TimeSpan FrictionStatusTime = TimeSpan.FromSeconds(0.5f);
 
         /// <summary>
-        ///     The entity's speed will be multiplied by this to slip it forwards.
+        /// How much stamina damage should this component do on slip?
         /// </summary>
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("launchForwardsMultiplier")]
-        public float LaunchForwardsMultiplier
-        {
-            get => _launchForwardsMultiplier;
-            set
-            {
-                if (MathHelper.CloseToPercent(_launchForwardsMultiplier, value)) return;
+        [DataField, AutoNetworkedField]
+        public float StaminaDamage = 25f;
 
-                _launchForwardsMultiplier = value;
-                Dirty();
-            }
-        }
-
-        public override ComponentState GetComponentState()
-        {
-            return new SlipperyComponentState(ParalyzeTime, LaunchForwardsMultiplier, SlipSound.GetSound());
-        }
-
-        public override void HandleComponentState(ComponentState? curState, ComponentState? nextState)
-        {
-            if (curState is not SlipperyComponentState state) return;
-
-            _paralyzeTime = state.ParalyzeTime;
-            _launchForwardsMultiplier = state.LaunchForwardsMultiplier;
-            _slipSound = new SoundPathSpecifier(state.SlipSound);
-        }
+        /// <summary>
+        /// Loads the data needed to determine how slippery something is.
+        /// </summary>
+        [DataField, AutoNetworkedField]
+        public SlipperyEffectEntry SlipData = new();
     }
-
-    [Serializable, NetSerializable]
-    public sealed class SlipperyComponentState : ComponentState
+    /// <summary>
+    /// Stores the data for slipperiness that way reagents and this component can use it.
+    /// </summary>
+    [DataDefinition, Serializable, NetSerializable]
+    public sealed partial class SlipperyEffectEntry
     {
-        public float ParalyzeTime { get; }
-        public float LaunchForwardsMultiplier { get; }
-        public string SlipSound { get; }
+        /// <summary>
+        /// How many seconds the mob will be stunned for.
+        /// </summary>
+        [DataField]
+        public TimeSpan StunTime = TimeSpan.FromSeconds(0.5);
 
-        public SlipperyComponentState(float paralyzeTime, float launchForwardsMultiplier, string slipSound)
-        {
-            ParalyzeTime = paralyzeTime;
-            LaunchForwardsMultiplier = launchForwardsMultiplier;
-            SlipSound = slipSound;
-        }
+        /// <summary>
+        /// How many seconds the mob will be knocked down for.
+        /// </summary>
+        [DataField]
+        public TimeSpan KnockdownTime = TimeSpan.FromSeconds(1.5);
+
+        /// <summary>
+        /// Should the slipped entity try to stand up when Knockdown ends?
+        /// </summary>
+        [DataField]
+        public bool AutoStand = true;
+
+        /// <summary>
+        /// The entity's speed will be multiplied by this to slip it forwards.
+        /// </summary>
+        [DataField]
+        public float LaunchForwardsMultiplier = 1.5f;
+
+        /// <summary>
+        /// Minimum speed entity must be moving to slip.
+        /// </summary>
+        [DataField]
+        public float RequiredSlipSpeed = 3.5f;
+
+        /// <summary>
+        /// If this is true, any slipping entity loses its friction until
+        /// it's not colliding with any SuperSlippery entities anymore.
+        /// They also will fail any attempts to stand up unless they have no-slips.
+        /// </summary>
+        [DataField]
+        public bool SuperSlippery;
+
+        /// <summary>
+        /// This is used to store the friction modifier that is used on a sliding entity.
+        /// </summary>
+        [DataField]
+        public float SlipFriction = 0.5f;
     }
 }

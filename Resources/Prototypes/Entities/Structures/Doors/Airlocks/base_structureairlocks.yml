@@ -4,6 +4,11 @@
   name: airlock
   description: It opens, it closes, and maybe crushes you.
   components:
+  - type: Anchorable
+    flags:
+    - Anchorable
+  - type: Rotatable
+  - type: StationAiWhitelist
   - type: MeleeSound
     soundGroups:
       Brute:
@@ -11,14 +16,15 @@
           "/Audio/Weapons/smash.ogg"
   - type: InteractionOutline
   - type: Sprite
-    netsync: false
     sprite: Structures/Doors/Airlocks/Standard/basic.rsi
+    snapCardinals: true
     layers:
     - state: closed
       map: ["enum.DoorVisualLayers.Base"]
     - state: closed_unlit
       shader: unshaded
       map: ["enum.DoorVisualLayers.BaseUnlit"]
+      visible: false
     - state: welded
       map: ["enum.WeldableLayers.BaseWelded"]
     - state: bolted_unlit
@@ -29,19 +35,42 @@
       shader: unshaded
     - state: panel_open
       map: ["enum.WiresVisualLayers.MaintenancePanel"]
+    - state: electrified_ai
+      sprite: Interface/Misc/ai_hud.rsi
+      shader: unshaded
+      visible: false
+      map: ["enum.ElectrifiedLayers.HUD"]
+    - state: electrified
+      sprite: Effects/electricity.rsi
+      shader: unshaded
+      visible: false
+      map: ["enum.ElectrifiedLayers.Sparks"]
+    - state: sparks
+      map: ["enum.DoorVisualLayers.BaseEmagging"]
+      shader: unshaded
+      visible: false
+  - type: AnimationPlayer
   - type: Physics
   - type: Fixtures
     fixtures:
-    - shape:
-        !type:PhysShapeAabb
-        bounds: "-0.49,-0.49,0.49,0.49" # don't want this colliding with walls or they won't close
-      mass: 100
-      mask:
-      - FullTileMask
-      layer:
-      - AirlockLayer
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.49,-0.49,0.49,0.49" # don't want this colliding with walls or they won't close
+        density: 100
+        mask:
+        - FullTileMask
+        layer:
+        - AirlockLayer
+  - type: LayerChangeOnWeld
+    unWeldedLayer: AirlockLayer
+    weldedLayer: WallLayer
+  - type: ContainerFill
+    containers:
+      board: [ DoorElectronics ]
+  - type: AccessReader
+    containerAccessProvider: board
   - type: Door
-    board: DoorElectronics
     crushDamage:
       types:
         Blunt: 15
@@ -51,34 +80,74 @@
       path: /Audio/Machines/airlock_close.ogg
     denySound:
       path: /Audio/Machines/airlock_deny.ogg
+  - type: ContainerContainer
+    containers:
+      board: !type:Container
   - type: Weldable
-    fuel: 3
+    fuel: 5
     time: 3
   - type: Airlock
+  - type: NavMapDoor
+  - type: DoorBolt
   - type: Appearance
+  - type: GenericVisualizer
     visuals:
-    - type: AirlockVisualizer
-    - type: WiresVisualizer
+      enum.ElectrifiedVisuals.ShowSparks:
+        enum.ElectrifiedLayers.Sparks:
+          True: { visible: True }
+          False: { visible: False }
+  - type: WiresVisuals
+  - type: ElectrocutionHUDVisuals
   - type: ApcPowerReceiver
     powerLoad: 20
   - type: ExtensionCableReceiver
   - type: Electrified
     enabled: false
     usesApcPower: true
+  - type: WiresPanel
+  - type: WiresPanelSecurity
   - type: Wires
-    BoardName: "Airlock Control"
-    LayoutId: Airlock
+    boardName: wires-board-name-airlock
+    layoutId: Airlock
+  - type: DoorSignalControl
+  - type: DeviceNetwork
+    deviceNetId: Wireless
+    receiveFrequencyId: BasicDevice
+  - type: WirelessNetworkConnection
+    range: 200
+  - type: DeviceLinkSink
+    ports:
+      - Open
+      - Close
+      - Toggle
+      - AutoClose
+      - DoorBolt
+  - type: DeviceLinkSource
+    ports:
+      - DoorStatus
+    lastSignals:
+      DoorStatus: false
+  - type: SoundOnOverload
+  - type: SpawnOnOverload
   - type: UserInterface
     interfaces:
-    - key: enum.WiresUiKey.Key
-      type: WiresBoundUserInterface
+      enum.AiUi.Key:
+        type: StationAiBoundUserInterface
+      enum.WiresUiKey.Key:
+        type: WiresBoundUserInterface
   - type: Airtight
-    fixVacuum: true
     noAirWhenFullyAirBlocked: false
+  - type: RadiationBlocker
+    resistance: 3
   - type: Occluder
   - type: Damageable
-    damageContainer: Inorganic
-    damageModifierSet: Metallic
+    damageModifierSet: StrongMetallic
+  - type: Injurable
+    damageContainer: StructuralInorganic
+  - type: RCDDeconstructable
+    cost: 6
+    delay: 8
+    fx: EffectRCDDeconstruct8
   - type: Destructible
     thresholds:
     - trigger:
@@ -87,13 +156,87 @@
       behaviors:
       - !type:DoActsBehavior
         acts: ["Destruction"]
+      # TODO this should go to the broken node first
+      - !type:PlaySoundBehavior
+        sound:
+          collection: MetalSlam
   - type: Construction
     graph: Airlock
     node: airlock
-  - type: IconSmooth
+    containers:
+    - board
+  - type: PlacementReplacement
     key: walls
-    mode: NoSprite
-  - type: PaintableAirlock
-    group: Standard
+  - type: Paintable
+    group: AirlockStandard
+  - type: StaticPrice
+    price: 150
+  - type: LightningTarget
+    priority: 1
+  - type: Tag
+    tags:
+      - Airlock
+      # This tag is used to nagivate the Airlock construction graph. It's needed because the construction graph is shared between Airlock, AirlockGlass, and HighSecDoor
+      - DoorRemoteWhitelist
+      # This tag is used by door remotes to allow or not a door remote to normally be able to interact with a door
+  - type: PryUnpowered
+  - type: BlockWeather
+  - type: GuideHelp
+    guides:
+    - Airlocks
+    - WirePanels
+    - Networking
   placement:
     mode: SnapgridCenter
+
+- type: entity
+  id: AirlockRCDResistant
+  parent: Airlock
+  abstract: true
+  components:
+  - type: RCDDeconstructable
+    deconstructable: false
+
+- type: entity
+  id: AirlockGlass
+  parent: Airlock
+  name: glass airlock
+  components:
+  - type: MeleeSound
+    soundGroups:
+      Brute:
+        collection: GlassSmack
+  - type: Door
+    occludes: false
+  - type: Occluder
+    enabled: false
+  - type: Sprite
+    sprite: Structures/Doors/Airlocks/Glass/glass.rsi
+  - type: AnimationPlayer
+  - type: Fixtures
+    fixtures:
+      fix1:
+        shape:
+          !type:PhysShapeAabb
+          bounds: "-0.49,-0.49,0.49,0.49" # don't want this colliding with walls or they won't close
+        density: 100
+        mask:
+        - FullTileMask
+        layer:     #removed opaque from the layer, allowing lasers to pass through glass airlocks
+        - GlassAirlockLayer
+  - type: LayerChangeOnWeld
+    unWeldedLayer: GlassAirlockLayer
+    weldedLayer: GlassLayer
+  - type: Construction
+    graph: Airlock
+    node: glassAirlock
+  - type: Paintable
+    group: AirlockGlass
+  - type: RadiationBlocker
+    resistance: 2
+  - type: Tag
+    tags:
+      - GlassAirlock
+      # This tag is used to nagivate the Airlock construction graph. It's needed because the construction graph is shared between Airlock, AirlockGlass, and HighSecDoor
+      - DoorRemoteWhitelist
+      # This tag is used by door remotes to allow or not a door remote to normally be able to interact with a door

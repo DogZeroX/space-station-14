@@ -4,12 +4,11 @@ namespace Content.Server.Traitor.Uplink.SurplusBundle;
 ///     Fill crate with a random uplink items.
 /// </summary>
 [RegisterComponent]
-public sealed class SurplusBundleComponent : Component
+public sealed partial class SurplusBundleComponent : Component
 {
     /// <summary>
     ///     Total price of all content inside bundle.
     /// </summary>
-    [ViewVariables(VVAccess.ReadOnly)]
-    [DataField("totalPrice")]
+    [DataField]
     public int TotalPrice = 20;
 }

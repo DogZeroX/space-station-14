@@ -6,12 +6,11 @@ namespace Content.Shared.DeviceNetwork;
 /// <summary>
 ///     A named device network frequency. Useful for ensuring entity prototypes can communicate with each other.
 /// </summary>
-[Prototype("deviceFrequency")]
-[Serializable, NetSerializable]
-public sealed class DeviceFrequencyPrototype : IPrototype
+[Prototype]
+public sealed partial class DeviceFrequencyPrototype : IPrototype
 {
-    [IdDataFieldAttribute]
-    public string ID { get; } = default!;
+    [IdDataField]
+    public string ID { get; private set; } = default!;
 
     // TODO Somehow Allow per-station or some other type of named but randomized frequencies?
     [DataField("frequency", required: true)]

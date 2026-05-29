@@ -1,21 +1,17 @@
-using System.Threading.Tasks;
-using NUnit.Framework;
+using Content.IntegrationTests.Fixtures;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
-using Robust.Shared.Network;
 
 namespace Content.IntegrationTests.Tests.Networking
 {
     [TestFixture]
-    sealed class NetworkIdsMatchTest : ContentIntegrationTest
+    public sealed class NetworkIdsMatchTest : GameTest
     {
         [Test]
         public async Task TestConnect()
         {
-            var client = StartClient();
-            var server = StartServer();
-
-            await ConnectNetworking(client, server);
+            var pair = Pair;
+            var server = pair.Server;
+            var client = pair.Client;
 
             var clientCompFactory = client.ResolveDependency<IComponentFactory>();
             var serverCompFactory = server.ResolveDependency<IComponentFactory>();
@@ -23,40 +19,26 @@ namespace Content.IntegrationTests.Tests.Networking
             var clientNetComps = clientCompFactory.NetworkedComponents;
             var serverNetComps = serverCompFactory.NetworkedComponents;
 
-            Assert.That(clientNetComps, Is.Not.Null);
-            Assert.That(serverNetComps, Is.Not.Null);
-            Assert.That(clientNetComps.Count, Is.EqualTo(serverNetComps.Count));
-
-            // Checks that at least Metadata and Transform are registered.
-            Assert.That(clientNetComps.Count, Is.GreaterThanOrEqualTo(2));
-
-            for (var netId = 0; netId < clientNetComps.Count; netId++)
+            Assert.Multiple(() =>
             {
-                Assert.That(clientNetComps[netId].Name, Is.EqualTo(serverNetComps[netId].Name));
-            }
-        }
-
-        private static async Task ConnectNetworking(ClientIntegrationInstance client, ServerIntegrationInstance server)
-        {
-            await Task.WhenAll(client.WaitIdleAsync(), server.WaitIdleAsync());
-
-            // Connect.
-
-            client.SetConnectTarget(server);
-
-            client.Post(() => IoCManager.Resolve<IClientNetManager>().ClientConnect(null, 0, null));
-
-            // Run some ticks for the handshake to complete and such.
-
-            for (var i = 0; i < 10; i++)
+                Assert.That(clientNetComps, Is.Not.Null);
+                Assert.That(serverNetComps, Is.Not.Null);
+            });
+            Assert.Multiple(() =>
             {
-                server.RunTicks(1);
-                await server.WaitIdleAsync();
-                client.RunTicks(1);
-                await client.WaitIdleAsync();
-            }
+                Assert.That(clientNetComps, Has.Count.EqualTo(serverNetComps.Count));
 
-            await Task.WhenAll(client.WaitIdleAsync(), server.WaitIdleAsync());
+                // Checks that at least Metadata and Transform are registered.
+                Assert.That(clientNetComps, Has.Count.GreaterThanOrEqualTo(2));
+            });
+
+            Assert.Multiple(() =>
+            {
+                for (var netId = 0; netId < clientNetComps.Count; netId++)
+                {
+                    Assert.That(clientNetComps[netId].Name, Is.EqualTo(serverNetComps[netId].Name));
+                }
+            });
         }
     }
 }

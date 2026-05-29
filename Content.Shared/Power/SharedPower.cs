@@ -1,13 +1,14 @@
-﻿using Robust.Shared.Serialization;
+using Content.Shared.NodeContainer.NodeGroups;
+using Robust.Shared.Serialization;
 
 namespace Content.Shared.Power
 {
     [Serializable, NetSerializable]
-    public enum ChargeState
+    public enum ChargeState : byte
     {
-        Still,
-        Charging,
-        Discharging,
+        Still = 0,
+        Charging = 1,
+        Discharging = 2,
     }
 
     [Serializable, NetSerializable]
@@ -18,6 +19,26 @@ namespace Content.Shared.Power
         Pulsed,
         Electrified,
         PulseCancel,
-        ElectrifiedCancel
+        ElectrifiedCancel,
+        MainWire,
+        WireCount,
+        CutWires
+    }
+
+    [Serializable, NetSerializable]
+    public enum CableType
+    {
+        HighVoltage,
+        MediumVoltage,
+        Apc,
+        ExCable
+    }
+
+    [Serializable, NetSerializable]
+    public enum Voltage
+    {
+        High = NodeGroupID.HVPower,
+        Medium = NodeGroupID.MVPower,
+        Apc = NodeGroupID.Apc,
     }
 }

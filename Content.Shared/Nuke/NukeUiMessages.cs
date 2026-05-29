@@ -2,9 +2,15 @@ using Robust.Shared.Serialization;
 
 namespace Content.Shared.Nuke
 {
-    public abstract class SharedNukeComponent : Component
+    public abstract partial class SharedNukeComponent : Component
     {
         public const string NukeDiskSlotId = "Nuke";
+
+        /// <summary>
+        /// Cooldown time between attempts to enter the nuke code.
+        /// Used to prevent clients from trying to brute force it.
+        /// </summary>
+        public static readonly TimeSpan EnterCodeCooldown = TimeSpan.FromSeconds(1);
     }
 
     [Serializable, NetSerializable]

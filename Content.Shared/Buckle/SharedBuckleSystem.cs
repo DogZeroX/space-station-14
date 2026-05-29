@@ -1,70 +1,52 @@
-using Content.Shared.Buckle.Components;
-using Content.Shared.Interaction.Events;
-using Content.Shared.Movement;
+using Content.Shared.ActionBlocker;
+using Content.Shared.Administration.Logs;
+using Content.Shared.Alert;
+using Content.Shared.DoAfter;
+using Content.Shared.Interaction;
+using Content.Shared.Mobs.Systems;
+using Content.Shared.Popups;
+using Content.Shared.Rotation;
 using Content.Shared.Standing;
-using Content.Shared.Throwing;
-using Robust.Shared.Physics.Dynamics;
+using Robust.Shared.Audio.Systems;
+using Robust.Shared.Containers;
+using Robust.Shared.Physics.Systems;
+using Robust.Shared.Player;
+using Robust.Shared.Timing;
 
-namespace Content.Shared.Buckle
+namespace Content.Shared.Buckle;
+
+public abstract partial class SharedBuckleSystem : EntitySystem
 {
-    public abstract class SharedBuckleSystem : EntitySystem
+    [Dependency] private IGameTiming _gameTiming = default!;
+    [Dependency] private ISharedAdminLogManager _adminLogger = default!;
+    [Dependency] private ISharedPlayerManager _playerManager = default!;
+
+    [Dependency] protected ActionBlockerSystem ActionBlocker = default!;
+    [Dependency] protected SharedAppearanceSystem Appearance = default!;
+
+    [Dependency] private AlertsSystem _alerts = default!;
+    [Dependency] private MobStateSystem _mobState = default!;
+    [Dependency] private SharedAudioSystem _audio = default!;
+    [Dependency] private SharedContainerSystem _container = default!;
+    [Dependency] private SharedInteractionSystem _interaction = default!;
+    [Dependency] private SharedJointSystem _joints = default!;
+    [Dependency] private SharedPopupSystem _popup = default!;
+    [Dependency] private SharedTransformSystem _transform = default!;
+    [Dependency] private StandingStateSystem _standing = default!;
+    [Dependency] private SharedPhysicsSystem _physics = default!;
+    [Dependency] private SharedRotationVisualsSystem _rotationVisuals = default!;
+    [Dependency] private SharedDoAfterSystem _doAfter = default!;
+
+    /// <inheritdoc/>
+    public override void Initialize()
     {
-        public override void Initialize()
-        {
-            base.Initialize();
-            SubscribeLocalEvent<SharedBuckleComponent, PreventCollideEvent>(PreventCollision);
-            SubscribeLocalEvent<SharedBuckleComponent, DownAttemptEvent>(HandleDown);
-            SubscribeLocalEvent<SharedBuckleComponent, StandAttemptEvent>(HandleStand);
-            SubscribeLocalEvent<SharedBuckleComponent, ThrowPushbackAttemptEvent>(HandleThrowPushback);
-            SubscribeLocalEvent<SharedBuckleComponent, UpdateCanMoveEvent>(HandleMove);
-            SubscribeLocalEvent<SharedBuckleComponent, ChangeDirectionAttemptEvent>(OnBuckleChangeDirectionAttempt);
-        }
+        base.Initialize();
 
-        private void OnBuckleChangeDirectionAttempt(EntityUid uid, SharedBuckleComponent component, ChangeDirectionAttemptEvent args)
-        {
-            if (component.Buckled)
-                args.Cancel();
-        }
+        UpdatesAfter.Add(typeof(SharedInteractionSystem));
+        UpdatesAfter.Add(typeof(SharedInputSystem));
 
-        private void HandleMove(EntityUid uid, SharedBuckleComponent component, UpdateCanMoveEvent args)
-        {
-            if (component.LifeStage > ComponentLifeStage.Running)
-                return;
-
-            if (component.Buckled)
-                args.Cancel();
-        }
-
-        private void HandleStand(EntityUid uid, SharedBuckleComponent component, StandAttemptEvent args)
-        {
-            if (component.Buckled)
-            {
-                args.Cancel();
-            }
-        }
-
-        private void HandleDown(EntityUid uid, SharedBuckleComponent component, DownAttemptEvent args)
-        {
-            if (component.Buckled)
-            {
-                args.Cancel();
-            }
-        }
-
-        private void HandleThrowPushback(EntityUid uid, SharedBuckleComponent component, ThrowPushbackAttemptEvent args)
-        {
-            if (!component.Buckled) return;
-            args.Cancel();
-        }
-
-        private void PreventCollision(EntityUid uid, SharedBuckleComponent component, PreventCollideEvent args)
-        {
-            if (args.BodyB.Owner != component.LastEntityBuckledTo) return;
-
-            if (component.Buckled || component.DontCollide)
-            {
-                args.Cancel();
-            }
-        }
+        InitializeBuckle();
+        InitializeStrap();
+        InitializeInteraction();
     }
 }

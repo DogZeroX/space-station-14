@@ -8,17 +8,14 @@ namespace Content.Shared.Administration
         Station,
         Server,
     }
+
     [Serializable, NetSerializable]
-    public sealed class AdminAnnounceEuiState : EuiStateBase {}
+    public sealed class AdminAnnounceEuiState : EuiStateBase
+    {
+    }
 
     public static class AdminAnnounceEuiMsg
     {
-        [Serializable, NetSerializable]
-        public sealed class Close : EuiMessageBase
-        {
-
-        }
-
         [Serializable, NetSerializable]
         public sealed class DoAnnounce : EuiMessageBase
         {

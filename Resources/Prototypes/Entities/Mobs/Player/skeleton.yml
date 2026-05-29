@@ -1,28 +1,54 @@
 - type: entity
-  save: false
-  parent: MobSkeletonPersonBase
-  id: MobSkeletonPerson
+  name: skeleton pirate
+  parent: MobSkeletonPerson
+  id: MobSkeletonPirate
   components:
-    - type: InteractionPopup
-      successChance: 1
-      interactSuccessString: hugging-success-generic
-      interactSuccessSound: /Audio/Effects/hug.ogg
-      messagePerceivedByOthers: hugging-success-generic-others
-    - type: Mind
-      showExamineInfo: true
-    - type: Input
-      context: "human"
-    - type: PlayerMobMover
-    - type: PlayerInputMover
-    - type: Vocal
-      maleScream: /Audio/Voice/Skeleton/skeleton_scream.ogg
-      femaleScream: /Audio/Voice/Skeleton/skeleton_scream.ogg
-    - type: Alerts
-    - type: Actions
-    - type: Eye
-    - type: CameraRecoil
-    - type: Examiner
-    - type: CanHostGuardian
-    - type: AiFactionTag
-      factions:
-        - NanoTrasen
+  - type: GhostRole
+    name: ghost-role-information-skeleton-pirate-name
+    description: ghost-role-information-skeleton-pirate-description
+    rules: ghost-role-information-freeagent-rules
+    mindRoles:
+    - MindRoleGhostRoleFreeAgent
+    raffle:
+      settings: default
+  - type: GhostTakeoverAvailable
+  - type: Loadout
+    prototypes: [PirateGear]
+  - type: RandomHumanoidAppearance
+
+
+- type: entity
+  name: skeleton biker
+  parent: MobSkeletonPerson
+  id: MobSkeletonBiker
+  components:
+  - type: GhostRole
+    name: ghost-role-information-skeleton-biker-name
+    description: ghost-role-information-skeleton-biker-description
+    rules: ghost-role-information-freeagent-rules
+    mindRoles:
+    - MindRoleGhostRoleFreeAgent
+    raffle:
+      settings: default
+  - type: GhostTakeoverAvailable
+  - type: Loadout
+    prototypes: [SkeletonBiker]
+  - type: RandomHumanoidAppearance
+
+- type: entity
+  parent: MobSkeletonPerson
+  id: MobSkeletonCloset
+  name: closet skeleton
+  components:
+  - type: GhostRole
+    name: ghost-role-information-closet-skeleton-name
+    description: ghost-role-information-closet-skeleton-description
+    rules: ghost-role-information-freeagent-rules
+    mindRoles:
+    - MindRoleGhostRoleFreeAgent
+    raffle:
+      settings: default
+  - type: GhostTakeoverAvailable
+  - type: Loadout
+    prototypes: [LimitedPassengerGear]
+  - type: RandomHumanoidAppearance

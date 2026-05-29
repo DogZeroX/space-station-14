@@ -1,93 +1,127 @@
+using System.Linq;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.Components;
+using Content.Server.Fluids.EntitySystems;
 using Content.Server.NodeContainer.EntitySystems;
+using Content.Shared.Atmos;
+using Content.Shared.Atmos.Components;
 using Content.Shared.Atmos.EntitySystems;
+using Content.Shared.Damage.Systems;
+using Content.Shared.Decals;
+using Content.Shared.Doors.Components;
 using Content.Shared.Maps;
 using JetBrains.Annotations;
+using Robust.Server.GameObjects;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Containers;
 using Robust.Shared.Map;
+using Robust.Shared.Physics.Systems;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Threading;
 
-namespace Content.Server.Atmos.EntitySystems
+namespace Content.Server.Atmos.EntitySystems;
+
+/// <summary>
+///     This is our SSAir equivalent, if you need to interact with or query atmos in any way, go through this.
+/// </summary>
+[UsedImplicitly]
+public sealed partial class AtmosphereSystem : SharedAtmosphereSystem
 {
-    /// <summary>
-    ///     This is our SSAir equivalent, if you need to interact with or query atmos in any way, go through this.
-    /// </summary>
-    [UsedImplicitly]
-    public sealed partial class AtmosphereSystem : SharedAtmosphereSystem
+    [Dependency] private IMapManager _mapManager = default!;
+    [Dependency] private ITileDefinitionManager _tileDefinitionManager = default!;
+    [Dependency] private IAdminLogManager _adminLog = default!;
+    [Dependency] private IParallelManager _parallel = default!;
+    [Dependency] private EntityLookupSystem _lookup = default!;
+    [Dependency] private SharedContainerSystem _containers = default!;
+    [Dependency] private SharedPhysicsSystem _physics = default!;
+    [Dependency] private GasTileOverlaySystem _gasTileOverlaySystem = default!;
+    [Dependency] private SharedAudioSystem _audio = default!;
+    [Dependency] private SharedMapSystem _mapSystem = default!;
+    [Dependency] private TileSystem _tile = default!;
+    [Dependency] private MapSystem _map = default!;
+    [Dependency] public PuddleSystem Puddle = default!;
+    [Dependency] private DamageableSystem _damage = default!;
+
+    [Dependency] private EntityQuery<GridAtmosphereComponent> _gridAtmosQuery = default!;
+    [Dependency] private EntityQuery<MapAtmosphereComponent> _mapAtmosQuery = default!;
+    [Dependency] private EntityQuery<AirtightComponent> _airtightQuery = default!;
+    [Dependency] private EntityQuery<FirelockComponent> _firelockQuery = default!;
+
+    private const float ExposedUpdateDelay = 1f;
+    private float _exposedTimer = 0f;
+
+    private HashSet<EntityUid> _entSet = new();
+
+    private string[] _burntDecals = [];
+
+    public override void Initialize()
     {
-        [Dependency] private readonly IMapManager _mapManager = default!;
-        [Dependency] private readonly AdminLogSystem _adminLog = default!;
-        [Dependency] private readonly SharedContainerSystem _containers = default!;
-        [Dependency] private readonly SharedPhysicsSystem _physics = default!;
+        base.Initialize();
 
+        UpdatesAfter.Add(typeof(NodeGroupSystem));
 
-        private const float ExposedUpdateDelay = 1f;
-        private float _exposedTimer = 0f;
+        InitializeGases();
+        InitializeCommands();
+        InitializeCVars();
+        InitializeGridAtmosphere();
+        InitializeMap();
 
-        public override void Initialize()
+        SubscribeLocalEvent<TileChangedEvent>(OnTileChanged);
+        SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
+
+        CacheDecals();
+    }
+
+    public override void Shutdown()
+    {
+        base.Shutdown();
+
+        ShutdownCommands();
+    }
+
+    private void OnTileChanged(ref TileChangedEvent ev)
+    {
+        foreach (var change in ev.Changes)
         {
-            base.Initialize();
+            InvalidateTile(ev.Entity.Owner, change.GridIndices);
+        }
+    }
 
-            UpdatesAfter.Add(typeof(NodeGroupSystem));
+    private void OnPrototypesReloaded(PrototypesReloadedEventArgs ev)
+    {
+        if (ev.WasModified<DecalPrototype>())
+            CacheDecals();
+    }
 
-            InitializeGases();
-            InitializeCommands();
-            InitializeCVars();
-            InitializeGrid();
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
 
+        UpdateProcessing(frameTime);
+        UpdateHighPressure(frameTime);
 
-            SubscribeLocalEvent<TileChangedEvent>(OnTileChanged);
+        _exposedTimer += frameTime;
 
+        if (_exposedTimer < ExposedUpdateDelay)
+            return;
+
+        var query = EntityQueryEnumerator<AtmosExposedComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out _, out var transform))
+        {
+            var air = GetContainingMixture((uid, transform));
+
+            if (air == null)
+                continue;
+
+            var updateEvent = new AtmosExposedUpdateEvent(transform.Coordinates, air, transform);
+            RaiseLocalEvent(uid, ref updateEvent);
         }
 
-        public override void Shutdown()
-        {
-            base.Shutdown();
+        _exposedTimer -= ExposedUpdateDelay;
+    }
 
-            ShutdownCommands();
-        }
-
-        private void OnTileChanged(TileChangedEvent ev)
-        {
-            // When a tile changes, we want to update it only if it's gone from
-            // space -> not space or vice versa. So if the old tile is the
-            // same as the new tile in terms of space-ness, ignore the change
-
-            if (ev.NewTile.IsSpace(_tileDefinitionManager) == ev.OldTile.IsSpace(_tileDefinitionManager))
-            {
-                return;
-            }
-
-            InvalidateTile(ev.NewTile.GridIndex, ev.NewTile.GridIndices);
-        }
-
-        public override void Update(float frameTime)
-        {
-            base.Update(frameTime);
-
-            UpdateProcessing(frameTime);
-            UpdateHighPressure(frameTime);
-
-            _exposedTimer += frameTime;
-
-            if (_exposedTimer < ExposedUpdateDelay)
-                return;
-
-            foreach (var (exposed, transform) in EntityManager.EntityQuery<AtmosExposedComponent, TransformComponent>())
-            {
-                // Used for things like disposals/cryo to change which air people are exposed to.
-                var airEvent = new AtmosExposedGetAirEvent();
-                RaiseLocalEvent(exposed.Owner, ref airEvent, false);
-
-                airEvent.Gas ??= GetTileMixture(transform.Coordinates);
-                if (airEvent.Gas == null)
-                    continue;
-
-                var updateEvent = new AtmosExposedUpdateEvent(transform.Coordinates, airEvent.Gas);
-                RaiseLocalEvent(exposed.Owner, ref updateEvent);
-            }
-
-            _exposedTimer -= ExposedUpdateDelay;
-        }
+    private void CacheDecals()
+    {
+        _burntDecals = ProtoMan.EnumeratePrototypes<DecalPrototype>().Where(x => x.Tags.Contains("burnt")).Select(x => x.ID).ToArray();
     }
 }

@@ -1,15 +1,24 @@
 using Content.Server.GameTicking;
 using Content.Server.Spawners.Components;
+using Content.Shared.EntityTable;
+using Content.Shared.GameTicking.Components;
 using JetBrains.Annotations;
+using Robust.Server.GameObjects;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Random;
 
+// TODO: This whole system is a mess. A lot of this should be marked obsolete.
+// TODO: It should probably use interfaces with entity tables *if* more than one component is needed.
+// TODO: Remove the TransformSystem Dependency when engine SpawnAtPosition EntityCoordinates override is fixed.
 namespace Content.Server.Spawners.EntitySystems
 {
     [UsedImplicitly]
-    public sealed class ConditionalSpawnerSystem : EntitySystem
+    public sealed partial class ConditionalSpawnerSystem : EntitySystem
     {
-        [Dependency] private readonly IRobustRandom _robustRandom = default!;
-        [Dependency] private readonly GameTicker _ticker = default!;
+        [Dependency] private IRobustRandom _robustRandom = default!;
+        [Dependency] private GameTicker _ticker = default!;
+        [Dependency] private EntityTableSystem _entityTable = default!;
+        [Dependency] private TransformSystem _xform = default!;
 
         public override void Initialize()
         {
@@ -18,90 +27,149 @@ namespace Content.Server.Spawners.EntitySystems
             SubscribeLocalEvent<GameRuleStartedEvent>(OnRuleStarted);
             SubscribeLocalEvent<ConditionalSpawnerComponent, MapInitEvent>(OnCondSpawnMapInit);
             SubscribeLocalEvent<RandomSpawnerComponent, MapInitEvent>(OnRandSpawnMapInit);
+            SubscribeLocalEvent<EntityTableSpawnerComponent, MapInitEvent>(OnEntityTableSpawnMapInit);
         }
 
         private void OnCondSpawnMapInit(EntityUid uid, ConditionalSpawnerComponent component, MapInitEvent args)
         {
-            TrySpawn(component);
+            TrySpawn(uid, component);
         }
 
         private void OnRandSpawnMapInit(EntityUid uid, RandomSpawnerComponent component, MapInitEvent args)
         {
-            Spawn(component);
-            EntityManager.QueueDeleteEntity(uid);
+            Spawn(uid, component);
+            if (component.DeleteSpawnerAfterSpawn)
+                QueueDel(uid);
         }
 
-        private void OnRuleStarted(GameRuleStartedEvent args)
+        private void OnEntityTableSpawnMapInit(Entity<EntityTableSpawnerComponent> ent, ref MapInitEvent args)
         {
-            foreach (var spawner in EntityManager.EntityQuery<ConditionalSpawnerComponent>())
+            Spawn(ent);
+            if (ent.Comp.DeleteSpawnerAfterSpawn && !TerminatingOrDeleted(ent) && Exists(ent))
+                QueueDel(ent);
+        }
+
+        private void OnRuleStarted(ref GameRuleStartedEvent args)
+        {
+            var query = EntityQueryEnumerator<ConditionalSpawnerComponent>();
+            while (query.MoveNext(out var uid, out var spawner))
             {
-                RuleStarted(spawner, args);
+                RuleStarted(uid, spawner, args);
             }
         }
 
-        public void RuleStarted(ConditionalSpawnerComponent component, GameRuleStartedEvent obj)
+        public void RuleStarted(EntityUid uid, ConditionalSpawnerComponent component, GameRuleStartedEvent obj)
         {
-            if(component.GameRules.Contains(obj.Rule.ID))
-                Spawn(component);
+            if (component.GameRules.Contains(obj.RuleId))
+                Spawn(uid, component);
         }
 
-        private void TrySpawn(ConditionalSpawnerComponent component)
+        private void TrySpawn(EntityUid uid, ConditionalSpawnerComponent component)
         {
             if (component.GameRules.Count == 0)
             {
-                Spawn(component);
+                Spawn(uid, component);
                 return;
             }
 
             foreach (var rule in component.GameRules)
             {
-                if (!_ticker.GameRuleStarted(rule)) continue;
-                Spawn(component);
+                if (!_ticker.IsGameRuleActive(rule))
+                    continue;
+                Spawn(uid, component);
                 return;
             }
         }
 
-        private void Spawn(ConditionalSpawnerComponent component)
+        private void Spawn(EntityUid uid, ConditionalSpawnerComponent component)
         {
             if (component.Chance != 1.0f && !_robustRandom.Prob(component.Chance))
                 return;
 
             if (component.Prototypes.Count == 0)
             {
-                Logger.Warning($"Prototype list in ConditionalSpawnComponent is empty! Entity: {component.Owner}");
+                Log.Warning($"Prototype list in ConditionalSpawnComponent is empty! Entity: {ToPrettyString(uid)}");
                 return;
             }
 
-            if (!Deleted(component.Owner))
-                EntityManager.SpawnEntity(_robustRandom.Pick(component.Prototypes), Transform(component.Owner).Coordinates);
+            if (Deleted(uid))
+                return;
+
+            var xform = Transform(uid);
+            var coords = _xform.GetMapCoordinates(uid, xform);
+            var rotation = _xform.GetWorldRotation(xform);
+
+            Spawn(_robustRandom.Pick(component.Prototypes), coords, rotation: rotation);
         }
 
-        private void Spawn(RandomSpawnerComponent component)
+        private void Spawn(EntityUid uid, RandomSpawnerComponent component)
         {
-            if (component.RarePrototypes.Count > 0 && (component.RareChance == 1.0f || _robustRandom.Prob(component.RareChance)))
-            {
-                EntityManager.SpawnEntity(_robustRandom.Pick(component.RarePrototypes), Transform(component.Owner).Coordinates);
-                return;
-            }
-
-            if (component.Chance != 1.0f && !_robustRandom.Prob(component.Chance))
+            if (Deleted(uid))
                 return;
 
-            if (component.Prototypes.Count == 0)
-            {
-                Logger.Warning($"Prototype list in RandomSpawnerComponent is empty! Entity: {component.Owner}");
+            if (GetPrototype((uid, component)) is not { } proto)
                 return;
-            }
-
-            if (Deleted(component.Owner)) return;
 
             var offset = component.Offset;
-            var xOffset = _robustRandom.NextFloat(-offset, offset);
-            var yOffset = _robustRandom.NextFloat(-offset, offset);
+            var vOffset = _robustRandom.NextVector2Box(-offset, offset);
 
-            var coordinates = Transform(component.Owner).Coordinates.Offset(new Vector2(xOffset, yOffset));
+            var xform = Transform(uid);
+            var coords = _xform.GetMapCoordinates(uid, xform).Offset(vOffset);
+            var rotation = _xform.GetWorldRotation(xform);
 
-            EntityManager.SpawnEntity(_robustRandom.Pick(component.Prototypes), coordinates);
+            Spawn(proto, coords, rotation: rotation);
+        }
+
+        private EntProtoId? GetPrototype(Entity<RandomSpawnerComponent> spawner)
+        {
+            if (GetPrototypes(spawner) is not { } list)
+                return null;
+
+            return _robustRandom.Pick(list);
+        }
+
+        private List<EntProtoId>? GetPrototypes(Entity<RandomSpawnerComponent> spawner)
+        {
+            // ReSharper disable once CompareOfFloatsByEqualityOperator
+            if (spawner.Comp.RarePrototypes.Count > 0 &&
+                (spawner.Comp.RareChance == 1.0f || _robustRandom.Prob(spawner.Comp.RareChance)))
+            {
+                return spawner.Comp.RarePrototypes;
+            }
+
+            if (spawner.Comp.Prototypes.Count == 0)
+            {
+                Log.Warning($"Prototype list in RandomSpawnerComponent is empty! Entity: {ToPrettyString(spawner)}");
+                return null;
+            }
+
+            // ReSharper disable once CompareOfFloatsByEqualityOperator
+            if (spawner.Comp.Chance == 1.0f || !_robustRandom.Prob(spawner.Comp.Chance))
+            {
+                return spawner.Comp.Prototypes;
+            }
+
+            return null;
+        }
+
+        private void Spawn(Entity<EntityTableSpawnerComponent> ent)
+        {
+            if (TerminatingOrDeleted(ent) || !Exists(ent))
+                return;
+
+            var xform = Transform(ent);
+            var coords = _xform.GetMapCoordinates(ent, xform);
+            var rotation = _xform.GetWorldRotation(xform);
+            var offset = ent.Comp.Offset;
+
+            var spawns = _entityTable.GetSpawns(ent.Comp.Table);
+            foreach (var proto in spawns)
+            {
+                var vOffset = _robustRandom.NextVector2(-offset, offset);
+                var trueCoords = coords.Offset(vOffset);
+
+                Spawn(proto, trueCoords, rotation: rotation);
+            }
         }
     }
 }

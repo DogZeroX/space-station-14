@@ -1,20 +1,20 @@
 using Content.Shared.Construction;
 using JetBrains.Annotations;
-using Content.Server.Doors.Components;
+using Content.Shared.Doors.Components;
 using Content.Shared.Examine;
 
 namespace Content.Server.Construction.Conditions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class AirlockBolted : IGraphCondition
+    public sealed partial class DoorBolted : IGraphCondition
     {
         [DataField("value")]
         public bool Value { get; private set; } = true;
 
         public bool Condition(EntityUid uid, IEntityManager entityManager)
         {
-            if (!entityManager.TryGetComponent(uid, out AirlockComponent? airlock))
+            if (!entityManager.TryGetComponent(uid, out DoorBoltComponent? airlock))
                 return true;
 
             return airlock.BoltsDown == Value;
@@ -26,11 +26,11 @@ namespace Content.Server.Construction.Conditions
 
             var entMan = IoCManager.Resolve<IEntityManager>();
 
-            if (!entMan.TryGetComponent(entity, out AirlockComponent? airlock)) return false;
+            if (!entMan.TryGetComponent(entity, out DoorBoltComponent? airlock)) return false;
 
             if (airlock.BoltsDown != Value)
             {
-                if (Value == true)
+                if (Value)
                     args.PushMarkup(Loc.GetString("construction-examine-condition-airlock-bolt", ("entityName", entMan.GetComponent<MetaDataComponent>(entity).EntityName)) + "\n");
                 else
                     args.PushMarkup(Loc.GetString("construction-examine-condition-airlock-unbolt", ("entityName", entMan.GetComponent<MetaDataComponent>(entity).EntityName)) + "\n");

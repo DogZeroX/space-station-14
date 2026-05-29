@@ -8,8 +8,8 @@ namespace Content.Server.Light.Components
     ///     Enables or disables a pointlight depending on the powered
     ///     state of an entity.
     /// </summary>
-    [RegisterComponent, Friend(typeof(PoweredLightSystem))]
-    public sealed class LitOnPoweredComponent : Component
+    [RegisterComponent, Access(typeof(PoweredLightSystem))]
+    public sealed partial class LitOnPoweredComponent : Component
     {
     }
 }

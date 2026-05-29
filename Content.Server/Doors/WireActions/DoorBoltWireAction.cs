@@ -1,73 +1,41 @@
-using Content.Server.Doors.Components;
+using Content.Server.Doors.Systems;
 using Content.Server.Wires;
 using Content.Shared.Doors;
+using Content.Shared.Doors.Components;
 using Content.Shared.Wires;
 
 namespace Content.Server.Doors;
 
-[DataDefinition]
-public sealed class DoorBoltWireAction : BaseWireAction
+public sealed partial class DoorBoltWireAction : ComponentWireAction<DoorBoltComponent>
 {
-    [DataField("color")]
-    private Color _statusColor = Color.Red;
+    public override Color Color { get; set; } = Color.Red;
+    public override string Name { get; set; } = "wire-name-door-bolt";
 
-    [DataField("name")]
-    private string _text = "BOLT";
-
-    public override StatusLightData? GetStatusLightData(Wire wire)
-    {
-        StatusLightState lightState = StatusLightState.Off;
-        if (IsPowered(wire.Owner)
-            && EntityManager.TryGetComponent<AirlockComponent>(wire.Owner, out var door))
-        {
-            if (door.BoltsDown)
-            {
-                lightState = StatusLightState.On;
-            }
-        }
-
-        return new StatusLightData(
-            _statusColor,
-            lightState,
-            _text);
-    }
+    public override StatusLightState? GetLightState(Wire wire, DoorBoltComponent comp)
+        => comp.BoltsDown ? StatusLightState.On : StatusLightState.Off;
 
     public override object StatusKey { get; } = AirlockWireStatus.BoltIndicator;
 
-    public override bool Cut(EntityUid user, Wire wire)
+    public override bool Cut(EntityUid user, Wire wire, DoorBoltComponent airlock)
     {
-        if (EntityManager.TryGetComponent<AirlockComponent>(wire.Owner, out var door))
-        {
-            if (!door.BoltsDown)
-            {
-                door.SetBoltsWithAudio(true);
-            }
-        }
+        EntityManager.System<DoorSystem>().SetBoltWireCut((wire.Owner, airlock), true);
+        if (!airlock.BoltsDown && IsPowered(wire.Owner))
+            EntityManager.System<DoorSystem>().SetBoltsDown((wire.Owner, airlock), true, user);
 
         return true;
     }
 
-    // does nothing
-    public override bool Mend(EntityUid user, Wire wire)
+    public override bool Mend(EntityUid user, Wire wire, DoorBoltComponent door)
     {
+        EntityManager.System<DoorSystem>().SetBoltWireCut((wire.Owner, door), false);
         return true;
     }
 
-    public override bool Pulse(EntityUid user, Wire wire)
+    public override void Pulse(EntityUid user, Wire wire, DoorBoltComponent door)
     {
-        if (EntityManager.TryGetComponent<AirlockComponent>(wire.Owner, out var door))
-        {
-            if (IsPowered(wire.Owner))
-            {
-                door.SetBoltsWithAudio(!door.BoltsDown);
-            }
-            else if (!door.BoltsDown)
-            {
-                door.SetBoltsWithAudio(true);
-            }
-
-        }
-
-        return true;
+        if (IsPowered(wire.Owner))
+            EntityManager.System<DoorSystem>().SetBoltsDown((wire.Owner, door), !door.BoltsDown);
+        else if (!door.BoltsDown)
+            EntityManager.System<DoorSystem>().SetBoltsDown((wire.Owner, door), true);
     }
 }

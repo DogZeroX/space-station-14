@@ -1,8 +1,6 @@
-﻿using System;
-using System.Threading.Tasks;
+using Content.IntegrationTests.Fixtures;
 using Content.Server.Stunnable;
 using Content.Shared.Inventory;
-using NUnit.Framework;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
@@ -10,8 +8,9 @@ using Robust.Shared.Map;
 namespace Content.IntegrationTests.Tests
 {
     [TestFixture]
-    public sealed class InventoryHelpersTest : ContentIntegrationTest
+    public sealed class InventoryHelpersTest : GameTest
     {
+        [TestPrototypes]
         private const string Prototypes = @"
 - type: entity
   name: InventoryStunnableDummy
@@ -19,16 +18,14 @@ namespace Content.IntegrationTests.Tests
   components:
   - type: Inventory
   - type: ContainerContainer
-  - type: StatusEffects
-    allowed:
-    - Stun
+  - type: MobState
 
 - type: entity
   name: InventoryJumpsuitJanitorDummy
   id: InventoryJumpsuitJanitorDummy
   components:
   - type: Clothing
-    Slots: [innerclothing]
+    slots: [innerclothing]
 
 - type: entity
   name: InventoryIDCardDummy
@@ -36,45 +33,45 @@ namespace Content.IntegrationTests.Tests
   components:
   - type: Clothing
     QuickEquip: false
-    Slots:
+    slots:
     - idcard
-  - type: PDA
+  - type: Pda
 ";
         [Test]
         public async Task SpawnItemInSlotTest()
         {
-            var options = new ServerIntegrationOptions {ExtraPrototypes = Prototypes};
-            var server = StartServer(options);
-
-            await server.WaitIdleAsync();
+            var pair = Pair;
+            var server = pair.Server;
 
             var sEntities = server.ResolveDependency<IEntityManager>();
+            var systemMan = sEntities.EntitySysManager;
 
             await server.WaitAssertion(() =>
             {
-                var mapMan = IoCManager.Resolve<IMapManager>();
-                var systemMan = IoCManager.Resolve<IEntitySystemManager>();
-
-                mapMan.CreateNewMapEntity(MapId.Nullspace);
-
                 var human = sEntities.SpawnEntity("InventoryStunnableDummy", MapCoordinates.Nullspace);
                 var invSystem = systemMan.GetEntitySystem<InventorySystem>();
 
-                // Can't do the test if this human doesn't have the slots for it.
-                Assert.That(invSystem.HasSlot(human, "jumpsuit"));
-                Assert.That(invSystem.HasSlot(human, "id"));
+                Assert.Multiple(() =>
+                {
+                    // Can't do the test if this human doesn't have the slots for it.
+                    Assert.That(invSystem.HasSlot(human, "jumpsuit"));
+                    Assert.That(invSystem.HasSlot(human, "id"));
+                });
 
                 Assert.That(invSystem.SpawnItemInSlot(human, "jumpsuit", "InventoryJumpsuitJanitorDummy", true));
 
+#pragma warning disable NUnit2045
                 // Do we actually have the uniform equipped?
                 Assert.That(invSystem.TryGetSlotEntity(human, "jumpsuit", out var uniform));
                 Assert.That(sEntities.GetComponent<MetaDataComponent>(uniform.Value).EntityPrototype is
                 {
                     ID: "InventoryJumpsuitJanitorDummy"
                 });
+#pragma warning restore NUnit2045
 
-                systemMan.GetEntitySystem<StunSystem>().TryStun(human, TimeSpan.FromSeconds(1f), true);
+                systemMan.GetEntitySystem<StunSystem>().TryUpdateStunDuration(human, TimeSpan.FromSeconds(1f));
 
+#pragma warning disable NUnit2045
                 // Since the mob is stunned, they can't equip this.
                 Assert.That(invSystem.SpawnItemInSlot(human, "id", "InventoryIDCardDummy", true), Is.False);
 
@@ -88,6 +85,8 @@ namespace Content.IntegrationTests.Tests
                 {
                     ID: "InventoryIDCardDummy"
                 });
+#pragma warning restore NUnit2045
+                sEntities.DeleteEntity(human);
             });
         }
     }

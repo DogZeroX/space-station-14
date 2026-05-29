@@ -1,32 +1,81 @@
 using Content.Shared.ActionBlocker;
+using Content.Shared.Chat;
+using Content.Shared.Emoting;
 using Content.Shared.Interaction.Events;
 using Content.Shared.Item;
-using Content.Shared.Movement;
-using Content.Shared.Physics.Pull;
-using Content.Shared.Pulling;
-using Content.Shared.Pulling.Components;
-using Content.Shared.Pulling.Events;
+using Content.Shared.Movement.Events;
+using Content.Shared.Movement.Pulling.Components;
+using Content.Shared.Movement.Pulling.Events;
+using Content.Shared.Movement.Pulling.Systems;
+using Content.Shared.Speech;
 using Content.Shared.Throwing;
 
 namespace Content.Shared.Administration;
 
-public sealed class AdminFrozenSystem : EntitySystem
+// TODO deduplicate with BlockMovementComponent
+public sealed partial class AdminFrozenSystem : EntitySystem
 {
-    [Dependency] private readonly ActionBlockerSystem _blocker = default!;
-    [Dependency] private readonly SharedPullingSystem _pulling = default!;
+    [Dependency] private ActionBlockerSystem _blocker = default!;
+    [Dependency] private PullingSystem _pulling = default!;
 
     public override void Initialize()
     {
-        base.Initialize();
-
-        SubscribeLocalEvent<AdminFrozenComponent, UseAttemptEvent>((_, _, args) => args.Cancel());
-        SubscribeLocalEvent<AdminFrozenComponent, PickupAttemptEvent>((_, _, args) => args.Cancel());
-        SubscribeLocalEvent<AdminFrozenComponent, ThrowAttemptEvent>((_, _, args) => args.Cancel());
-        SubscribeLocalEvent<AdminFrozenComponent, InteractionAttemptEvent>((_, _, args) => args.Cancel());
+        SubscribeLocalEvent<AdminFrozenComponent, UseAttemptEvent>(OnAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, PickupAttemptEvent>(OnAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, ThrowAttemptEvent>(OnAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, InteractionAttemptEvent>(OnInteractAttempt);
         SubscribeLocalEvent<AdminFrozenComponent, ComponentStartup>(OnStartup);
         SubscribeLocalEvent<AdminFrozenComponent, ComponentShutdown>(UpdateCanMove);
         SubscribeLocalEvent<AdminFrozenComponent, UpdateCanMoveEvent>(OnUpdateCanMove);
         SubscribeLocalEvent<AdminFrozenComponent, PullAttemptEvent>(OnPullAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, AttackAttemptEvent>(OnAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, ChangeDirectionAttemptEvent>(OnAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, EmoteAttemptEvent>(OnEmoteAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, SpeakAttemptEvent>(OnSpeakAttempt);
+        SubscribeLocalEvent<AdminFrozenComponent, InGameOocMessageAttemptEvent>(OnInGameOocMessageAttempt);
+        SubscribeLocalEvent<InGameOocMessageAttemptEvent>(OnInGameOocMessageAttemptBroadcast);
+    }
+
+    /// <summary>
+    /// Freezes and mutes the given entity.
+    /// </summary>
+    public void FreezeAndMute(EntityUid uid)
+    {
+        var comp = EnsureComp<AdminFrozenComponent>(uid);
+        comp.Muted = true;
+        Dirty(uid, comp);
+    }
+
+    private void OnInteractAttempt(Entity<AdminFrozenComponent> ent, ref InteractionAttemptEvent args)
+    {
+        args.Cancelled = true;
+    }
+
+    private void OnSpeakAttempt(EntityUid uid, AdminFrozenComponent component, SpeakAttemptEvent args)
+    {
+        if (!component.Muted)
+            return;
+
+        args.Cancel();
+    }
+
+    private void OnInGameOocMessageAttempt(Entity<AdminFrozenComponent> ent, ref InGameOocMessageAttemptEvent args)
+    {
+        if (!ent.Comp.Muted)
+            return;
+
+        // Despite Type being available, Admin Mute does not care to differentiate. If you are out, you are out.
+        args.Cancelled = true;
+    }
+
+    private void OnInGameOocMessageAttemptBroadcast(ref InGameOocMessageAttemptEvent args)
+    {
+        //TODO Player LOOC mute/ban. Session is in the  args, but where to store/check the muted state?
+    }
+
+    private void OnAttempt(EntityUid uid, AdminFrozenComponent component, CancellableEntityEventArgs args)
+    {
+        args.Cancel();
     }
 
     private void OnPullAttempt(EntityUid uid, AdminFrozenComponent component, PullAttemptEvent args)
@@ -36,9 +85,9 @@ public sealed class AdminFrozenSystem : EntitySystem
 
     private void OnStartup(EntityUid uid, AdminFrozenComponent component, ComponentStartup args)
     {
-        if (TryComp<SharedPullableComponent>(uid, out var pullable))
+        if (TryComp<PullableComponent>(uid, out var pullable))
         {
-            _pulling.TryStopPull(pullable);
+            _pulling.TryStopPull(uid, pullable);
         }
 
         UpdateCanMove(uid, component, args);
@@ -55,5 +104,11 @@ public sealed class AdminFrozenSystem : EntitySystem
     private void UpdateCanMove(EntityUid uid, AdminFrozenComponent component, EntityEventArgs args)
     {
         _blocker.UpdateCanMove(uid);
+    }
+
+    private void OnEmoteAttempt(EntityUid uid, AdminFrozenComponent component, EmoteAttemptEvent args)
+    {
+        if (component.Muted)
+            args.Cancel();
     }
 }

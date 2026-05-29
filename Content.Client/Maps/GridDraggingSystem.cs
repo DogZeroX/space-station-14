@@ -1,22 +1,24 @@
-using Content.Client.Administration.Managers;
+using System.Numerics;
 using Content.Shared.Maps;
 using Robust.Client.GameObjects;
 using Robust.Client.Graphics;
 using Robust.Client.Input;
 using Robust.Shared.Input;
 using Robust.Shared.Map;
+using Robust.Shared.Physics.Components;
 using Robust.Shared.Timing;
 
 namespace Content.Client.Maps;
 
 /// <inheritdoc />
-public sealed class GridDraggingSystem : SharedGridDraggingSystem
+public sealed partial class GridDraggingSystem : SharedGridDraggingSystem
 {
-    [Dependency] private readonly IEyeManager _eyeManager = default!;
-    [Dependency] private readonly IGameTiming _gameTiming = default!;
-    [Dependency] private readonly IInputManager _inputManager = default!;
-    [Dependency] private readonly IMapManager _mapManager = default!;
-    [Dependency] private readonly InputSystem _inputSystem = default!;
+    [Dependency] private IEyeManager _eyeManager = default!;
+    [Dependency] private IGameTiming _gameTiming = default!;
+    [Dependency] private IInputManager _inputManager = default!;
+    [Dependency] private IMapManager _mapManager = default!;
+    [Dependency] private InputSystem _inputSystem = default!;
+    [Dependency] private SharedTransformSystem _transformSystem = default!;
 
     public bool Enabled { get; set; }
 
@@ -24,16 +26,33 @@ public sealed class GridDraggingSystem : SharedGridDraggingSystem
     private Vector2 _localPosition;
     private MapCoordinates? _lastMousePosition;
 
+    public override void Initialize()
+    {
+        base.Initialize();
+        SubscribeNetworkEvent<GridDragToggleMessage>(OnToggleMessage);
+    }
+
+    private void OnToggleMessage(GridDragToggleMessage ev)
+    {
+        if (Enabled == ev.Enabled)
+            return;
+
+        Enabled = ev.Enabled;
+
+        if (!Enabled)
+            StopDragging();
+    }
+
     private void StartDragging(EntityUid grid, Vector2 localPosition)
     {
         _dragging = grid;
         _localPosition = localPosition;
 
-        if (TryComp<PhysicsComponent>(grid, out var body))
+        if (HasComp<PhysicsComponent>(grid))
         {
             RaiseNetworkEvent(new GridDragVelocityRequest()
             {
-                Grid = grid,
+                Grid = GetNetEntity(grid),
                 LinearVelocity = Vector2.Zero
             });
         }
@@ -43,16 +62,16 @@ public sealed class GridDraggingSystem : SharedGridDraggingSystem
     {
         if (_dragging == null) return;
 
-        if (_lastMousePosition != null && TryComp<TransformComponent>(_dragging.Value, out var xform) &&
-            TryComp<PhysicsComponent>(_dragging.Value, out var body) &&
+        if (_lastMousePosition != null && TryComp(_dragging.Value, out TransformComponent? xform) &&
+            TryComp<PhysicsComponent>(_dragging.Value, out _) &&
             xform.MapID == _lastMousePosition.Value.MapId)
         {
             var tickTime = _gameTiming.TickPeriod;
-            var distance = _lastMousePosition.Value.Position - xform.WorldPosition;
+            var distance = _lastMousePosition.Value.Position - _transformSystem.GetWorldPosition(xform);
             RaiseNetworkEvent(new GridDragVelocityRequest()
             {
-                Grid = _dragging.Value,
-                LinearVelocity = distance.LengthSquared > 0f ? (distance / (float) tickTime.TotalSeconds) * 0.25f : Vector2.Zero,
+                Grid = GetNetEntity(_dragging.Value),
+                LinearVelocity = distance.LengthSquared() > 0f ? (distance / (float) tickTime.TotalSeconds) * 0.25f : Vector2.Zero,
             });
         }
 
@@ -76,17 +95,17 @@ public sealed class GridDraggingSystem : SharedGridDraggingSystem
         }
 
         var mouseScreenPos = _inputManager.MouseScreenPosition;
-        var mousePos = _eyeManager.ScreenToMap(mouseScreenPos);
+        var mousePos = _eyeManager.PixelToMap(mouseScreenPos);
 
         if (_dragging == null)
         {
-            if (!_mapManager.TryFindGridAt(mousePos, out var grid))
+            if (!_mapManager.TryFindGridAt(mousePos, out var gridUid, out var grid))
                 return;
 
-            StartDragging(grid.GridEntityId, Transform(grid.GridEntityId).InvWorldMatrix.Transform(mousePos.Position));
+            StartDragging(gridUid, Vector2.Transform(mousePos.Position, _transformSystem.GetInvWorldMatrix(gridUid)));
         }
 
-        if (!TryComp<TransformComponent>(_dragging, out var xform))
+        if (!TryComp(_dragging, out TransformComponent? xform))
         {
             StopDragging();
             return;
@@ -98,16 +117,16 @@ public sealed class GridDraggingSystem : SharedGridDraggingSystem
             return;
         }
 
-        var localToWorld = xform.WorldMatrix.Transform(_localPosition);
+        var localToWorld = Vector2.Transform(_localPosition, _transformSystem.GetWorldMatrix(xform));
 
         if (localToWorld.EqualsApprox(mousePos.Position, 0.01f)) return;
 
-        var requestedGridOrigin = mousePos.Position - xform.WorldRotation.RotateVec(_localPosition);
+        var requestedGridOrigin = mousePos.Position - _transformSystem.GetWorldRotation(xform).RotateVec(_localPosition);
         _lastMousePosition = new MapCoordinates(requestedGridOrigin, mousePos.MapId);
 
         RaiseNetworkEvent(new GridDragRequestPosition()
         {
-            Grid = _dragging.Value,
+            Grid = GetNetEntity(_dragging.Value),
             WorldPosition = requestedGridOrigin,
         });
     }

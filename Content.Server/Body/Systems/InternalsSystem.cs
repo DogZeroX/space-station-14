@@ -1,24 +1,58 @@
-﻿using Content.Server.Atmos.Components;
-using Content.Server.Body.Components;
-using Content.Shared.Atmos;
+using Content.Server.Atmos.EntitySystems;
+using Content.Shared.Alert;
+using Content.Shared.Atmos.Components;
+using Content.Shared.Body.Components;
+using Content.Shared.Body.Systems;
+using Content.Shared.Internals;
+using Content.Shared.Roles;
 
 namespace Content.Server.Body.Systems;
 
-public sealed class InternalsSystem : EntitySystem
+public sealed partial class InternalsSystem : SharedInternalsSystem
 {
+    [Dependency] private AlertsSystem _alerts = default!;
+    [Dependency] private GasTankSystem _gasTank = default!;
+    [Dependency] private RespiratorSystem _respirator = default!;
+
     public override void Initialize()
     {
         base.Initialize();
-
         SubscribeLocalEvent<InternalsComponent, InhaleLocationEvent>(OnInhaleLocation);
+        SubscribeLocalEvent<InternalsComponent, StartingGearEquippedEvent>(OnStartingGear);
     }
 
-    private void OnInhaleLocation(EntityUid uid, InternalsComponent component, InhaleLocationEvent args)
+    private void OnStartingGear(EntityUid uid, InternalsComponent component, ref StartingGearEquippedEvent args)
     {
-        if (component.AreInternalsWorking())
+        if (component.BreathTools.Count == 0)
+            return;
+
+        if (component.GasTankEntity != null)
+            return; // already connected
+
+        // Can the entity breathe the air it is currently exposed to?
+        if (_respirator.CanMetabolizeInhaledAir(uid))
+            return;
+
+        var tank = FindBestGasTank(uid);
+        if (tank == null)
+            return;
+
+        // Could the entity metabolise the air in the linked gas tank?
+        if (!_respirator.CanMetabolizeInhaledAir(uid, tank.Value.Comp.Air))
+            return;
+
+        ToggleInternals(uid, uid, force: false, component, ToggleMode.On);
+    }
+
+    private void OnInhaleLocation(Entity<InternalsComponent> ent, ref InhaleLocationEvent args)
+    {
+        if (AreInternalsWorking(ent))
         {
-            var gasTank = Comp<GasTankComponent>(component.GasTankEntity!.Value);
-            args.Gas = gasTank.RemoveAirVolume(Atmospherics.BreathVolume);
+            var gasTank = Comp<GasTankComponent>(ent.Comp.GasTankEntity!.Value);
+            // TODO ATMOS: TODO BODY: This is an incredibly stupid workaround to stop Urist McHands from horfing all 5 litres of the gas tank in 10 seconds.
+            args.Gas = _gasTank.RemoveAirOutput((ent.Comp.GasTankEntity.Value, gasTank), args.Respirator.BreathVolume);
+            // TODO ATMOS: Should listen to gas tank updates instead I guess?
+            _alerts.ShowAlert(ent.Owner, ent.Comp.InternalsAlert, GetSeverity(ent));
         }
     }
 }

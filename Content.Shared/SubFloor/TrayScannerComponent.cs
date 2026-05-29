@@ -1,44 +1,46 @@
+using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
 using Robust.Shared.Serialization;
 
 namespace Content.Shared.SubFloor;
 
-[RegisterComponent]
-[NetworkedComponent]
-public sealed class TrayScannerComponent : Component
+[RegisterComponent, NetworkedComponent, AutoGenerateComponentState]
+public sealed partial class TrayScannerComponent : Component
 {
     /// <summary>
     ///     Whether the scanner is currently on.
     /// </summary>
-    [ViewVariables]
-    public bool Enabled { get; set; }
+    [DataField, AutoNetworkedField]
+    public bool Enabled;
 
     /// <summary>
-    ///     Last position of the scanner. Rounded to integers to avoid excessive entity lookups when moving.
+    ///     Current mode of operation, defines which subfloor entities are shown.
     /// </summary>
-    [ViewVariables]
-    public Vector2i? LastLocation { get; set; }
+    [DataField, AutoNetworkedField]
+    public TrayScannerMode Mode = TrayScannerMode.All;
 
     /// <summary>
     ///     Radius in which the scanner will reveal entities. Centered on the <see cref="LastLocation"/>.
     /// </summary>
-    [DataField("range")]
-    public float Range { get; set; } = 2.5f;
+    [DataField, AutoNetworkedField]
+    public float Range = 4f;
 
-    /// <summary>
-    ///     The sub-floor entities that this scanner is currently revealing.
-    /// </summary>
-    [ViewVariables]
-    public HashSet<EntityUid> RevealedSubfloors = new();
+    [DataField]
+    public SoundSpecifier SoundSwitchMode = new SoundPathSpecifier("/Audio/Machines/quickbeep.ogg");
 }
 
 [Serializable, NetSerializable]
-public sealed class TrayScannerState : ComponentState
+public enum TrayScannerMode
 {
-    public bool Enabled;
+    All,
+    Piping,
+    Wiring
+}
 
-    public TrayScannerState(bool enabled)
-    {
-        Enabled = enabled;
-    }
+[Serializable, NetSerializable]
+public enum TrayScannerVisual : byte
+{
+    Visual,
+    On,
+    Off
 }

@@ -1,5 +1,5 @@
 ﻿using System.Text.Json;
-using Robust.Server.Player;
+using Content.Shared.Administration.Logs;
 
 namespace Content.Server.Administration.Logs.Converters;
 
@@ -10,26 +10,14 @@ public sealed class PlayerSessionConverter : AdminLogConverter<SerializablePlaye
     {
         writer.WriteStartObject();
 
-        if (value.Player.AttachedEntity is {Valid: true} playerEntity)
+        if (value.Uid is {Valid: true} playerEntity)
         {
-            var entityManager = IoCManager.Resolve<IEntityManager>();
-
-            writer.WriteNumber("id", (int) value.Player.AttachedEntity);
-            writer.WriteString("name", entityManager.GetComponent<MetaDataComponent>(playerEntity).EntityName);
+            writer.WriteNumber("id", playerEntity.Id);
+            writer.WriteString("name", value.Name);
         }
 
-        writer.WriteString("player", value.Player.UserId.UserId);
+        writer.WriteString("player", value.UserId);
 
         writer.WriteEndObject();
-    }
-}
-
-public readonly struct SerializablePlayer
-{
-    public readonly IPlayerSession Player;
-
-    public SerializablePlayer(IPlayerSession player)
-    {
-        Player = player;
     }
 }

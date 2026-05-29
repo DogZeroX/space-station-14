@@ -1,34 +1,41 @@
-using Content.Server.Atmos.Components;
+using System.Numerics;
 using Content.Shared.Atmos;
+using Content.Shared.Atmos.Components;
 using Content.Shared.Atmos.EntitySystems;
 using Content.Shared.CCVar;
 using JetBrains.Annotations;
+using Robust.Server.GameObjects;
 using Robust.Server.Player;
 using Robust.Shared.Configuration;
 using Robust.Shared.Enums;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
+using Robust.Shared.Player;
 
 namespace Content.Server.Atmos.EntitySystems
 {
     [UsedImplicitly]
-    public sealed class AtmosDebugOverlaySystem : SharedAtmosDebugOverlaySystem
+    public sealed partial class AtmosDebugOverlaySystem : SharedAtmosDebugOverlaySystem
     {
-        [Dependency] private readonly IPlayerManager _playerManager = default!;
-        [Dependency] private readonly IMapManager _mapManager = default!;
-        [Dependency] private readonly IConfigurationManager _configManager = default!;
-        [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
+        [Dependency] private IPlayerManager _playerManager = default!;
+        [Dependency] private IMapManager _mapManager = default!;
+        [Dependency] private IConfigurationManager _configManager = default!;
+        [Dependency] private SharedTransformSystem _transform = default!;
+        [Dependency] private MapSystem _mapSystem = default!;
 
         /// <summary>
         ///     Players allowed to see the atmos debug overlay.
         ///     To modify it see <see cref="AddObserver"/> and
         ///     <see cref="RemoveObserver"/>.
         /// </summary>
-        private readonly HashSet<IPlayerSession> _playerObservers = new();
+        private readonly HashSet<ICommonSession> _playerObservers = new();
 
         /// <summary>
         ///     Overlay update ticks per second.
         /// </summary>
         private float _updateCooldown;
+
+        private List<Entity<MapGridComponent>> _grids = new();
 
         public override void Initialize()
         {
@@ -42,17 +49,17 @@ namespace Content.Server.Atmos.EntitySystems
             _playerManager.PlayerStatusChanged -= OnPlayerStatusChanged;
         }
 
-        public bool AddObserver(IPlayerSession observer)
+        public bool AddObserver(ICommonSession observer)
         {
             return _playerObservers.Add(observer);
         }
 
-        public bool HasObserver(IPlayerSession observer)
+        public bool HasObserver(ICommonSession observer)
         {
             return _playerObservers.Contains(observer);
         }
 
-        public bool RemoveObserver(IPlayerSession observer)
+        public bool RemoveObserver(ICommonSession observer)
         {
             if (!_playerObservers.Remove(observer))
             {
@@ -60,7 +67,7 @@ namespace Content.Server.Atmos.EntitySystems
             }
 
             var message = new AtmosDebugOverlayDisableMessage();
-            RaiseNetworkEvent(message, observer.ConnectedClient);
+            RaiseNetworkEvent(message, observer.Channel);
 
             return true;
         }
@@ -70,18 +77,16 @@ namespace Content.Server.Atmos.EntitySystems
         /// </summary>
         /// <param name="observer">The observer to toggle.</param>
         /// <returns>true if added, false if removed.</returns>
-        public bool ToggleObserver(IPlayerSession observer)
+        public bool ToggleObserver(ICommonSession observer)
         {
             if (HasObserver(observer))
             {
                 RemoveObserver(observer);
                 return false;
             }
-            else
-            {
-                AddObserver(observer);
-                return true;
-            }
+
+            AddObserver(observer);
+            return true;
         }
 
         private void OnPlayerStatusChanged(object? sender, SessionStatusEventArgs e)
@@ -92,22 +97,20 @@ namespace Content.Server.Atmos.EntitySystems
             }
         }
 
-        private AtmosDebugOverlayData ConvertTileToData(TileAtmosphere? tile)
+        private AtmosDebugOverlayData? ConvertTileToData(TileAtmosphere tile)
         {
-            var gases = new float[Atmospherics.TotalNumberOfGases];
-
-            if (tile?.Air == null)
-            {
-                return new AtmosDebugOverlayData(0, gases, AtmosDirection.Invalid, tile?.LastPressureDirection ?? AtmosDirection.Invalid, false, tile?.BlockedAirflow ?? AtmosDirection.Invalid);
-            }
-            else
-            {
-                for (var i = 0; i < Atmospherics.TotalNumberOfGases; i++)
-                {
-                    gases[i] = tile.Air.GetMoles(i);
-                }
-                return new AtmosDebugOverlayData(tile.Air.Temperature, gases, tile.PressureDirection, tile.LastPressureDirection, tile.ExcitedGroup != null, tile.BlockedAirflow);
-            }
+            return new AtmosDebugOverlayData(
+                tile.GridIndices,
+                tile.Air?.Temperature ?? default,
+                tile.Air?.Moles,
+                tile.PressureDirection,
+                tile.LastPressureDirection,
+                tile.AirtightData.BlockedDirections,
+                tile.ExcitedGroup?.GetHashCode(),
+                tile.Space,
+                tile.MapAtmosphere,
+                tile.NoGridTile,
+                tile.Air?.Immutable ?? false);
         }
 
         public override void Update(float frameTime)
@@ -131,21 +134,27 @@ namespace Content.Server.Atmos.EntitySystems
                 if (session.AttachedEntity is not {Valid: true} entity)
                     continue;
 
-                var transform = EntityManager.GetComponent<TransformComponent>(entity);
-
-                var worldBounds = Box2.CenteredAround(transform.WorldPosition,
+                var transform = Transform(entity);
+                var pos = _transform.GetWorldPosition(transform);
+                var worldBounds = Box2.CenteredAround(pos,
                     new Vector2(LocalViewRange, LocalViewRange));
 
-                foreach (var grid in _mapManager.FindGridsIntersecting(transform.MapID, worldBounds))
+                _grids.Clear();
+                _mapManager.FindGridsIntersecting(transform.MapID, worldBounds, ref _grids);
+
+                foreach (var grid in _grids)
                 {
-                    if (!EntityManager.EntityExists(grid.GridEntityId))
+                    var uid = grid.Owner;
+
+                    if (!Exists(uid))
                         continue;
 
-                    if (!EntityManager.TryGetComponent<GridAtmosphereComponent?>(grid.GridEntityId, out var gam)) continue;
+                    if (!TryComp(uid, out GridAtmosphereComponent? gridAtmos))
+                        continue;
 
-                    var entityTile = grid.GetTileRef(transform.Coordinates).GridIndices;
-                    var baseTile = new Vector2i(entityTile.X - (LocalViewRange / 2), entityTile.Y - (LocalViewRange / 2));
-                    var debugOverlayContent = new AtmosDebugOverlayData[LocalViewRange * LocalViewRange];
+                    var entityTile = _mapSystem.GetTileRef(grid, grid, transform.Coordinates).GridIndices;
+                    var baseTile = new Vector2i(entityTile.X - LocalViewRange / 2, entityTile.Y - LocalViewRange / 2);
+                    var debugOverlayContent = new AtmosDebugOverlayData?[LocalViewRange * LocalViewRange];
 
                     var index = 0;
                     for (var y = 0; y < LocalViewRange; y++)
@@ -153,11 +162,13 @@ namespace Content.Server.Atmos.EntitySystems
                         for (var x = 0; x < LocalViewRange; x++)
                         {
                             var vector = new Vector2i(baseTile.X + x, baseTile.Y + y);
-                            debugOverlayContent[index++] = ConvertTileToData(_atmosphereSystem.GetTileAtmosphereOrCreateSpace(grid, gam, vector));
+                            gridAtmos.Tiles.TryGetValue(vector, out var tile);
+                            debugOverlayContent[index++] = tile == null ? null : ConvertTileToData(tile);
                         }
                     }
 
-                    RaiseNetworkEvent(new AtmosDebugOverlayMessage(grid.Index, baseTile, debugOverlayContent), session.ConnectedClient);
+                    var msg = new AtmosDebugOverlayMessage(GetNetEntity(grid), baseTile, debugOverlayContent);
+                    RaiseNetworkEvent(msg, session.Channel);
                 }
             }
         }

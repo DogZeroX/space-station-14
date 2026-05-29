@@ -1,234 +1,282 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Threading.Tasks;
 using Content.Server.GameTicking.Presets;
-using Content.Server.GameTicking.Rules;
-using Content.Server.Ghost.Components;
+using Content.Server.Maps;
 using Content.Shared.CCVar;
-using Content.Shared.Damage;
-using Content.Shared.Damage.Prototypes;
-using Content.Shared.MobState.Components;
-using Robust.Server.Player;
+using Content.Shared.GameTicking.Components;
+using Content.Shared.Maps;
+using JetBrains.Annotations;
+using Robust.Shared.Player;
+using Robust.Shared.Prototypes;
 
-namespace Content.Server.GameTicking
+namespace Content.Server.GameTicking;
+
+public sealed partial class GameTicker
 {
-    public sealed partial class GameTicker
+    public const float PresetFailedCooldownIncrease = 30f;
+
+    /// <summary>
+    /// The selected preset that will be used at the start of the next round.
+    /// </summary>
+    public GamePresetPrototype? Preset { get; private set; }
+
+    /// <summary>
+    /// The selected preset that will be shown at the lobby screen to fool players.
+    /// </summary>
+    public GamePresetPrototype? Decoy { get; private set; }
+
+    /// <summary>
+    /// The preset that's currently active.
+    /// </summary>
+    public GamePresetPrototype? CurrentPreset { get; private set; }
+
+    /// <summary>
+    /// Countdown to the preset being reset to the server default.
+    /// </summary>
+    public int? ResetCountdown;
+
+    private bool StartPreset(ICommonSession[] origReadyPlayers, bool force)
     {
-        public const float PresetFailedCooldownIncrease = 30f;
+        _sawmill.Info($"Attempting to start preset '{CurrentPreset?.ID}'");
+        var startAttempt = new RoundStartAttemptEvent(origReadyPlayers, force);
+        RaiseLocalEvent(startAttempt);
 
-        public GamePresetPrototype? Preset { get; private set; }
+        if (!startAttempt.Cancelled)
+            return true;
 
-        private bool StartPreset(IPlayerSession[] origReadyPlayers, bool force)
+        var presetTitle = CurrentPreset != null ? Loc.GetString(CurrentPreset.ModeTitle) : string.Empty;
+
+        void FailedPresetRestart()
         {
-            var startAttempt = new RoundStartAttemptEvent(origReadyPlayers, force);
-            RaiseLocalEvent(startAttempt);
+            SendServerMessage(Loc.GetString("game-ticker-start-round-cannot-start-game-mode-restart",
+                ("failedGameMode", presetTitle)));
+            RestartRound();
+            DelayStart(TimeSpan.FromSeconds(PresetFailedCooldownIncrease));
+        }
 
-            if (!startAttempt.Cancelled)
-                return true;
+        if (_cfg.GetCVar(CCVars.GameLobbyFallbackEnabled))
+        {
+            var fallbackPresets = _cfg.GetCVar(CCVars.GameLobbyFallbackPreset).Split(",");
+            var startFailed = true;
 
-            var presetTitle = Preset != null ? Loc.GetString(Preset.ModeTitle) : string.Empty;
-
-            void FailedPresetRestart()
+            _sawmill.Info($"Fallback - Failed to start round, attempting to start fallback presets.");
+            foreach (var preset in fallbackPresets)
             {
-                SendServerMessage(Loc.GetString("game-ticker-start-round-cannot-start-game-mode-restart",
-                    ("failedGameMode", presetTitle)));
-                RestartRound();
-                DelayStart(TimeSpan.FromSeconds(PresetFailedCooldownIncrease));
-            }
-
-            if (_configurationManager.GetCVar(CCVars.GameLobbyFallbackEnabled))
-            {
-                var oldPreset = Preset;
+                _sawmill.Info($"Fallback - Clearing up gamerules");
                 ClearGameRules();
-                SetGamePreset(_configurationManager.GetCVar(CCVars.GameLobbyFallbackPreset));
+                _sawmill.Info($"Fallback - Attempting to start '{preset}'");
+                SetGamePreset(preset, resetDelay: 1);
                 AddGamePresetRules();
                 StartGamePresetRules();
 
                 startAttempt.Uncancel();
                 RaiseLocalEvent(startAttempt);
 
-                _chatManager.DispatchServerAnnouncement(
-                    Loc.GetString("game-ticker-start-round-cannot-start-game-mode-fallback",
-                        ("failedGameMode", presetTitle),
-                        ("fallbackMode", Loc.GetString(Preset!.ModeTitle))));
-
-                if (startAttempt.Cancelled)
+                if (!startAttempt.Cancelled)
                 {
-                    FailedPresetRestart();
-                    return false;
+                    _chatManager.SendAdminAnnouncement(
+                        Loc.GetString("game-ticker-start-round-cannot-start-game-mode-fallback",
+                            ("failedGameMode", presetTitle),
+                            ("fallbackMode", Loc.GetString(preset))));
+                    RefreshLateJoinAllowed();
+                    startFailed = false;
+                    break;
                 }
-
-                RefreshLateJoinAllowed();
+                _sawmill.Info($"Fallback - '{preset}' failed to start.");
             }
-            else
+
+            if (startFailed)
             {
                 FailedPresetRestart();
                 return false;
             }
-
-            return true;
         }
 
-        private void InitializeGamePreset()
+        else
         {
-            SetGamePreset(LobbyEnabled ? _configurationManager.GetCVar(CCVars.GameLobbyDefaultPreset) : "sandbox");
+            _sawmill.Info($"Fallback - Failed to start preset but fallbacks are disabled. Returning to Lobby.");
+            FailedPresetRestart();
+            return false;
         }
 
-        public void SetGamePreset(GamePresetPrototype preset, bool force = false)
+        return true;
+    }
+
+    private void InitializeGamePreset()
+    {
+        SetGamePreset(LobbyEnabled ? _cfg.GetCVar(CCVars.GameLobbyDefaultPreset) : "sandbox");
+    }
+
+    public void SetGamePreset(GamePresetPrototype? preset, bool force = false, GamePresetPrototype? decoy = null, int? resetDelay = null)
+    {
+        // Do nothing if this game ticker is a dummy!
+        if (DummyTicker)
+            return;
+
+        if (resetDelay is not null)
         {
-            // Do nothing if this game ticker is a dummy!
-            if (DummyTicker)
-                return;
-
-            Preset = preset;
-            UpdateInfoText();
-
-            if (force)
-            {
-                StartRound(true);
-            }
+            ResetCountdown = resetDelay.Value;
+            // Reset counter is checked and changed at the end of each round
+            // So if the game is in the lobby, the first requested round will happen before the check, and we need one less check
+            if (CurrentPreset is null)
+                ResetCountdown = resetDelay.Value - 1;
+        }
+        else
+        {
+            ResetCountdown = null;
         }
 
-        public void SetGamePreset(string preset, bool force = false)
+        Preset = preset;
+        Decoy = decoy;
+        ValidateMap();
+        UpdateInfoText();
+
+        if (force)
         {
-            var proto = FindGamePreset(preset);
-            if(proto != null)
-                SetGamePreset(proto, force);
-        }
-
-        public GamePresetPrototype? FindGamePreset(string preset)
-        {
-            if (_prototypeManager.TryIndex(preset, out GamePresetPrototype? presetProto))
-                return presetProto;
-
-            foreach (var proto in _prototypeManager.EnumeratePrototypes<GamePresetPrototype>())
-            {
-                foreach (var alias in proto.Alias)
-                {
-                    if (preset.Equals(alias, StringComparison.InvariantCultureIgnoreCase))
-                        return proto;
-                }
-            }
-
-            return null;
-        }
-
-        public bool TryFindGamePreset(string preset, [NotNullWhen(true)] out GamePresetPrototype? prototype)
-        {
-            prototype = FindGamePreset(preset);
-
-            return prototype != null;
-        }
-
-        private bool AddGamePresetRules()
-        {
-            if (DummyTicker || Preset == null)
-                return false;
-
-            foreach (var rule in Preset.Rules)
-            {
-                if (!_prototypeManager.TryIndex(rule, out GameRulePrototype? ruleProto))
-                    continue;
-
-                AddGameRule(ruleProto);
-            }
-
-            return true;
-        }
-
-        private void StartGamePresetRules()
-        {
-            // May be touched by the preset during init.
-            foreach (var rule in _addedGameRules.ToArray())
-            {
-                StartGameRule(rule);
-            }
-        }
-
-        public bool OnGhostAttempt(Mind.Mind mind, bool canReturnGlobal)
-        {
-            var handleEv = new GhostAttemptHandleEvent(mind, canReturnGlobal);
-            RaiseLocalEvent(handleEv);
-
-            // Something else has handled the ghost attempt for us! We return its result.
-            if (handleEv.Handled)
-                return handleEv.Result;
-
-            var playerEntity = mind.CurrentEntity;
-
-            var entities = IoCManager.Resolve<IEntityManager>();
-            if (entities.HasComponent<GhostComponent>(playerEntity))
-                return false;
-
-            if (mind.VisitingEntity != default)
-            {
-                mind.UnVisit();
-            }
-
-            var position = playerEntity is {Valid: true}
-                ? Transform(playerEntity.Value).Coordinates
-                : GetObserverSpawnPoint();
-
-            // Ok, so, this is the master place for the logic for if ghosting is "too cheaty" to allow returning.
-            // There's no reason at this time to move it to any other place, especially given that the 'side effects required' situations would also have to be moved.
-            // + If CharacterDeadPhysically applies, we're physically dead. Therefore, ghosting OK, and we can return (this is critical for gibbing)
-            //   Note that we could theoretically be ICly dead and still physically alive and vice versa.
-            //   (For example, a zombie could be dead ICly, but may retain memories and is definitely physically active)
-            // + If we're in a mob that is critical, and we're supposed to be able to return if possible,
-            //   we're succumbing - the mob is killed. Therefore, character is dead. Ghosting OK.
-            //   (If the mob survives, that's a bug. Ghosting is kept regardless.)
-            var canReturn = canReturnGlobal && mind.CharacterDeadPhysically;
-
-            if (canReturnGlobal && TryComp(playerEntity, out MobStateComponent? mobState))
-            {
-                if (mobState.IsCritical())
-                {
-                    canReturn = true;
-
-                    //todo: what if they dont breathe lol
-                    //cry deeply
-                    DamageSpecifier damage = new(_prototypeManager.Index<DamageTypePrototype>("Asphyxiation"), 200);
-                    _damageable.TryChangeDamage(playerEntity, damage, true);
-                }
-            }
-
-            var ghost = Spawn("MobObserver", position.ToMap(entities));
-
-            // Try setting the ghost entity name to either the character name or the player name.
-            // If all else fails, it'll default to the default entity prototype name, "observer".
-            // However, that should rarely happen.
-            var meta = MetaData(ghost);
-            if(!string.IsNullOrWhiteSpace(mind.CharacterName))
-                meta.EntityName = mind.CharacterName;
-            else if (!string.IsNullOrWhiteSpace(mind.Session?.Name))
-                meta.EntityName = mind.Session.Name;
-
-            var ghostComponent = Comp<GhostComponent>(ghost);
-
-            if (mind.TimeOfDeath.HasValue)
-            {
-                ghostComponent.TimeOfDeath = mind.TimeOfDeath!.Value;
-            }
-
-            _ghosts.SetCanReturnToBody(ghostComponent, canReturn);
-
-            if (canReturn)
-                mind.Visit(ghost);
-            else
-                mind.TransferTo(ghost);
-            return true;
+            StartRound(true);
         }
     }
 
-    public sealed class GhostAttemptHandleEvent : HandledEntityEventArgs
+    public void SetGamePreset(string preset, bool force = false, int? resetDelay = null)
     {
-        public Mind.Mind Mind { get; }
-        public bool CanReturnGlobal { get; }
-        public bool Result { get; set; }
+        var proto = FindGamePreset(preset);
+        if (proto != null)
+            SetGamePreset(proto, force, null, resetDelay);
+    }
 
-        public GhostAttemptHandleEvent(Mind.Mind mind, bool canReturnGlobal)
+    public GamePresetPrototype? FindGamePreset(string preset)
+    {
+        if (_prototypeManager.TryIndex(preset, out GamePresetPrototype? presetProto))
+            return presetProto;
+
+        foreach (var proto in _prototypeManager.EnumeratePrototypes<GamePresetPrototype>())
         {
-            Mind = mind;
-            CanReturnGlobal = canReturnGlobal;
+            foreach (var alias in proto.Alias)
+            {
+                if (preset.Equals(alias, StringComparison.InvariantCultureIgnoreCase))
+                    return proto;
+            }
         }
+
+        return null;
+    }
+
+    public bool TryFindGamePreset(string preset, [NotNullWhen(true)] out GamePresetPrototype? prototype)
+    {
+        prototype = FindGamePreset(preset);
+
+        return prototype != null;
+    }
+
+    public bool IsMapEligible(GameMapPrototype map)
+    {
+        if (Preset == null)
+            return true;
+
+        if (Preset.MapPool == null || !_prototypeManager.TryIndex<GameMapPoolPrototype>(Preset.MapPool, out var pool))
+            return true;
+
+        return pool.Maps.Contains(map.ID);
+    }
+
+    private void ValidateMap()
+    {
+        if (Preset == null || _gameMapManager.GetSelectedMap() is not { } map)
+            return;
+
+        if (Preset.MapPool == null ||
+            !_prototypeManager.TryIndex<GameMapPoolPrototype>(Preset.MapPool, out var pool))
+            return;
+
+        if (pool.Maps.Contains(map.ID))
+            return;
+
+        _gameMapManager.SelectMapRandom();
+    }
+
+    private bool AddGamePresetRules()
+    {
+        if (DummyTicker || Preset == null)
+            return false;
+
+        CurrentPreset = Preset;
+        foreach (var rule in Preset.Rules)
+        {
+            AddFilteredGameRule(rule);
+        }
+
+        return true;
+    }
+
+    private void TryResetPreset()
+    {
+        if (ResetCountdown is null || ResetCountdown-- > 0)
+            return;
+
+        InitializeGamePreset();
+        ResetCountdown = null;
+    }
+
+    public void StartGamePresetRules()
+    {
+        // May be touched by the preset during init.
+        var rules = new List<EntityUid>(GetAddedGameRules());
+        foreach (var rule in rules)
+        {
+            StartGameRule(rule);
+        }
+    }
+
+    /// <inhereitdoc cref="GetMinimumPlayerCount(GamePresetPrototype)"/>
+    [PublicAPI]
+    public int GetMinimumPlayerCount(ProtoId<GamePresetPrototype> proto)
+    {
+        if (!_prototypeManager.Resolve(proto, out var preset))
+            return 0;
+
+        return GetMinimumPlayerCount(preset);
+    }
+
+    /// <summary>
+    /// Gets the minimum number of players required for a game preset to start.
+    /// Checks both the preset itself, and all rules to find the minimum.
+    /// </summary>
+    /// <param name="proto">Game preset prototype we're checking.</param>
+    /// <returns>Minimum number of players required for the rule to start.</returns>
+    [PublicAPI]
+    public int GetMinimumPlayerCount(GamePresetPrototype proto)
+    {
+        var min = proto.MinPlayers ?? 0;
+        foreach (var entProto in proto.Rules)
+        {
+            if (!_prototypeManager.Resolve(entProto, out var ent))
+                continue;
+
+            if (!ent.TryGetComponent<GameRuleComponent>(out var rule, Factory))
+                continue;
+
+            min = Math.Max(min, rule.MinPlayers);
+        }
+
+        return min;
+    }
+
+    private void IncrementRoundNumber()
+    {
+        var playerIds = _playerGameStatuses.Keys.Select(player => player.UserId).ToArray();
+        var serverName = _cfg.GetCVar(CCVars.AdminLogsServerName);
+
+        // TODO FIXME AAAAAAAAAAAAAAAAAAAH THIS IS BROKEN
+        // Task.Run as a terrible dirty workaround to avoid synchronization context deadlock from .Result here.
+        // This whole setup logic should be made asynchronous so we can properly wait on the DB AAAAAAAAAAAAAH
+        var task = Task.Run(async () =>
+        {
+            var server = await _dbEntryManager.ServerEntity;
+            return await _db.AddNewRound(server, playerIds);
+        });
+
+        _taskManager.BlockWaitOnTask(task);
+        RoundId = task.GetAwaiter().GetResult();
     }
 }

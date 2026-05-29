@@ -1,3 +1,4 @@
+using System.Numerics;
 using Content.Shared.Interaction;
 using Content.Shared.Whitelist;
 using Robust.Client.GameObjects;
@@ -12,15 +13,21 @@ namespace Content.Client.Outline;
 /// <summary>
 ///     System used to indicate whether an entity is a valid target based on some criteria.
 /// </summary>
-public sealed class TargetOutlineSystem : EntitySystem
+public sealed partial class TargetOutlineSystem : EntitySystem
 {
-    [Dependency] private readonly IEyeManager _eyeManager = default!;
-    [Dependency] private readonly IGameTiming _timing = default!;
-    [Dependency] private readonly EntityLookupSystem _lookup = default!;
-    [Dependency] private readonly IInputManager _inputManager = default!;
-    [Dependency] private readonly IPlayerManager _playerManager = default!;
-    [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
-    [Dependency] private readonly SharedInteractionSystem _interactionSystem = default!;
+    private static readonly ProtoId<ShaderPrototype> ShaderTargetValid = "SelectionOutlineInrange";
+    private static readonly ProtoId<ShaderPrototype> ShaderTargetInvalid = "SelectionOutline";
+
+    [Dependency] private IEyeManager _eyeManager = default!;
+    [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private EntityLookupSystem _lookup = default!;
+    [Dependency] private IInputManager _inputManager = default!;
+    [Dependency] private IPlayerManager _playerManager = default!;
+    [Dependency] private IPrototypeManager _prototypeManager = default!;
+    [Dependency] private SharedInteractionSystem _interactionSystem = default!;
+    [Dependency] private EntityWhitelistSystem _whitelistSystem = default!;
+    [Dependency] private SharedTransformSystem _transformSystem = default!;
+    [Dependency] private EntityQuery<SpriteComponent> _spriteQuery = default!;
 
     private bool _enabled = false;
 
@@ -28,6 +35,11 @@ public sealed class TargetOutlineSystem : EntitySystem
     ///     Whitelist that the target must satisfy.
     /// </summary>
     public EntityWhitelist? Whitelist = null;
+
+    /// <summary>
+    ///     Blacklist that the target must satisfy.
+    /// </summary>
+    public EntityWhitelist? Blacklist = null;
 
     /// <summary>
     ///     Predicate the target must satisfy.
@@ -58,10 +70,10 @@ public sealed class TargetOutlineSystem : EntitySystem
     /// <summary>
     ///     The size of the box around the mouse to use when looking for valid targets.
     /// </summary>
-    public float LookupSize = 2;
+    public float LookupSize = 1;
 
-    private const string ShaderTargetValid = "SelectionOutlineInrange";
-    private const string ShaderTargetInvalid = "SelectionOutline";
+    private Vector2 LookupVector => new(LookupSize, LookupSize);
+
     private ShaderInstance? _shaderTargetValid;
     private ShaderInstance? _shaderTargetInvalid;
 
@@ -71,8 +83,8 @@ public sealed class TargetOutlineSystem : EntitySystem
     {
         base.Initialize();
 
-        _shaderTargetValid = _prototypeManager.Index<ShaderPrototype>(ShaderTargetValid).Instance();
-        _shaderTargetInvalid = _prototypeManager.Index<ShaderPrototype>(ShaderTargetInvalid).Instance();
+        _shaderTargetValid = _prototypeManager.Index(ShaderTargetValid).InstanceUnique();
+        _shaderTargetInvalid = _prototypeManager.Index(ShaderTargetInvalid).InstanceUnique();
     }
 
     public void Disable()
@@ -84,15 +96,16 @@ public sealed class TargetOutlineSystem : EntitySystem
         RemoveHighlights();
     }
 
-    public void Enable(float range, bool checkObstructions, Func<EntityUid, bool>? predicate, EntityWhitelist? whitelist, CancellableEntityEventArgs? validationEvent)
+    public void Enable(float range, bool checkObstructions, Func<EntityUid, bool>? predicate, EntityWhitelist? whitelist, EntityWhitelist? blacklist, CancellableEntityEventArgs? validationEvent)
     {
         Range = range;
         CheckObstruction = checkObstructions;
         Predicate = predicate;
         Whitelist = whitelist;
+        Blacklist = blacklist;
         ValidationEvent = validationEvent;
 
-        _enabled = Predicate != null || Whitelist != null || ValidationEvent != null;
+        _enabled = Predicate != null || Whitelist != null || Blacklist != null || ValidationEvent != null;
     }
 
     public override void Update(float frameTime)
@@ -107,7 +120,7 @@ public sealed class TargetOutlineSystem : EntitySystem
 
     private void HighlightTargets()
     {
-        if (_playerManager.LocalPlayer?.ControlledEntity is not { Valid: true } player)
+        if (_playerManager.LocalEntity is not { Valid: true } player)
             return;
 
         // remove current highlights
@@ -115,14 +128,13 @@ public sealed class TargetOutlineSystem : EntitySystem
 
         // find possible targets on screen
         // TODO: Duplicated in SpriteSystem and DragDropSystem. Should probably be cached somewhere for a frame?
-        var mousePos = _eyeManager.ScreenToMap(_inputManager.MouseScreenPosition).Position;
-        var bounds = new Box2(mousePos - LookupSize / 2f, mousePos + LookupSize / 2f);
-        var pvsEntities = _lookup.GetEntitiesIntersecting(_eyeManager.CurrentMap, bounds, LookupFlags.Approximate | LookupFlags.Anchored);
-        var spriteQuery = GetEntityQuery<SpriteComponent>();
+        var mousePos = _eyeManager.PixelToMap(_inputManager.MouseScreenPosition).Position;
+        var bounds = new Box2(mousePos - LookupVector, mousePos + LookupVector);
+        var pvsEntities = _lookup.GetEntitiesIntersecting(_eyeManager.CurrentEye.Position.MapId, bounds, LookupFlags.Approximate | LookupFlags.Static);
 
         foreach (var entity in pvsEntities)
         {
-            if (!spriteQuery.TryGetComponent(entity, out var sprite) || !sprite.Visible)
+            if (!_spriteQuery.TryGetComponent(entity, out var sprite) || !sprite.Visible)
                 continue;
 
             // Check the predicate
@@ -130,7 +142,7 @@ public sealed class TargetOutlineSystem : EntitySystem
 
             // check the entity whitelist
             if (valid && Whitelist != null)
-                valid = Whitelist.IsValid(entity);
+                valid = _whitelistSystem.IsWhitelistPass(Whitelist, entity);
 
             // and check the cancellable event
             if (valid && ValidationEvent != null)
@@ -143,7 +155,7 @@ public sealed class TargetOutlineSystem : EntitySystem
             if (!valid)
             {
                 // was this previously valid?
-                if (_highlightedSprites.Remove(sprite))
+                if (_highlightedSprites.Remove(sprite) && (sprite.PostShader == _shaderTargetValid || sprite.PostShader == _shaderTargetInvalid))
                 {
                     sprite.PostShader = null;
                     sprite.RenderOrder = 0;
@@ -157,10 +169,15 @@ public sealed class TargetOutlineSystem : EntitySystem
                 valid = _interactionSystem.InRangeUnobstructed(player, entity, Range);
             else if (Range >= 0)
             {
-                var origin = Transform(player).WorldPosition;
-                var target = Transform(entity).WorldPosition;
-                valid = (origin - target).LengthSquared <= Range;
+                var origin = _transformSystem.GetWorldPosition(player);
+                var target = _transformSystem.GetWorldPosition(entity);
+                valid = (origin - target).LengthSquared() <= Range;
             }
+
+            if (sprite.PostShader != null &&
+                sprite.PostShader != _shaderTargetValid &&
+                sprite.PostShader != _shaderTargetInvalid)
+                return;
 
             // highlight depending on whether its in or out of range
             sprite.PostShader = valid ? _shaderTargetValid : _shaderTargetInvalid;
@@ -173,6 +190,9 @@ public sealed class TargetOutlineSystem : EntitySystem
     {
         foreach (var sprite in _highlightedSprites)
         {
+            if (sprite.PostShader != _shaderTargetValid && sprite.PostShader != _shaderTargetInvalid)
+                continue;
+
             sprite.PostShader = null;
             sprite.RenderOrder = 0;
         }

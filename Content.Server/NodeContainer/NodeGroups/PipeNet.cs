@@ -1,100 +1,92 @@
 using System.Linq;
-using Content.Server.Atmos;
 using Content.Server.Atmos.EntitySystems;
 using Content.Server.NodeContainer.Nodes;
 using Content.Shared.Atmos;
-using Robust.Shared.Map;
-using Robust.Shared.Utility;
+using Content.Shared.NodeContainer;
+using Content.Shared.NodeContainer.NodeGroups;
 
-namespace Content.Server.NodeContainer.NodeGroups
+namespace Content.Server.NodeContainer.NodeGroups;
+
+[NodeGroup(NodeGroupID.Pipe)]
+public sealed class PipeNet : BaseNodeGroup, IPipeNet
 {
-    public interface IPipeNet : INodeGroup, IGasMixtureHolder
+    [ViewVariables] public GasMixture Air { get; set; } = new() {Temperature = Atmospherics.T20C};
+
+    [ViewVariables] private AtmosphereSystem? _atmosphereSystem;
+
+    public EntityUid? Grid { get; private set; }
+
+    public override void Initialize(Node sourceNode, IEntityManager entMan)
     {
-        /// <summary>
-        ///     Causes gas in the PipeNet to react.
-        /// </summary>
-        void Update();
+        base.Initialize(sourceNode, entMan);
+
+        Grid = entMan.GetComponent<TransformComponent>(sourceNode.Owner).GridUid;
+
+        if (Grid == null)
+        {
+            // This is probably due to a canister or something like that being spawned in space.
+            return;
+        }
+
+        _atmosphereSystem = entMan.EntitySysManager.GetEntitySystem<AtmosphereSystem>();
+        _atmosphereSystem.AddPipeNet(Grid.Value, this);
     }
 
-    [NodeGroup(NodeGroupID.Pipe)]
-    public sealed class PipeNet : BaseNodeGroup, IPipeNet
+    public void Update()
     {
-        [ViewVariables] public GasMixture Air { get; set; } = new() {Temperature = Atmospherics.T20C};
+        _atmosphereSystem?.React(Air, this);
+    }
 
-        [ViewVariables] private readonly List<PipeNode> _pipes = new();
+    public override void LoadNodes(List<Node> groupNodes)
+    {
+        base.LoadNodes(groupNodes);
 
-        [ViewVariables] private AtmosphereSystem? _atmosphereSystem;
-
-        public GridId Grid => GridId;
-
-        public override void Initialize(Node sourceNode)
+        foreach (var node in groupNodes)
         {
-            base.Initialize(sourceNode);
-
-            _atmosphereSystem = EntitySystem.Get<AtmosphereSystem>();
-            _atmosphereSystem.AddPipeNet(this);
-        }
-
-        public void Update()
-        {
-            _atmosphereSystem?.React(Air, this);
-        }
-
-        public override void LoadNodes(List<Node> groupNodes)
-        {
-            base.LoadNodes(groupNodes);
-
-            foreach (var node in groupNodes)
-            {
-                var pipeNode = (PipeNode) node;
-                _pipes.Add(pipeNode);
-                Air.Volume += pipeNode.Volume;
-            }
-        }
-
-        public override void RemoveNode(Node node)
-        {
-            base.RemoveNode(node);
-
             var pipeNode = (PipeNode) node;
-            Air.Volume -= pipeNode.Volume;
-            // TODO: Bad O(n^2)
-            _pipes.Remove(pipeNode);
+            Air.Volume += pipeNode.Volume;
+        }
+    }
+
+    public override void RemoveNode(Node node)
+    {
+        base.RemoveNode(node);
+
+        // if the node is simply being removed into a separate group, we do nothing, as gas redistribution will be
+        // handled by AfterRemake(). But if it is being deleted, we actually want to remove the gas stored in this node.
+        if (!node.Deleting || node is not PipeNode pipe)
+            return;
+
+        Air.Multiply(1f - pipe.Volume / Air.Volume);
+        Air.Volume -= pipe.Volume;
+    }
+
+    public override void AfterRemake(IEnumerable<IGrouping<INodeGroup?, Node>> newGroups)
+    {
+        RemoveFromGridAtmos();
+
+        var newAir = new List<GasMixture>(newGroups.Count());
+        foreach (var newGroup in newGroups)
+        {
+            if (newGroup.Key is IPipeNet newPipeNet)
+                newAir.Add(newPipeNet.Air);
         }
 
-        public override void AfterRemake(IEnumerable<IGrouping<INodeGroup?, Node>> newGroups)
-        {
-            RemoveFromGridAtmos();
+        _atmosphereSystem?.DivideInto(Air, newAir);
+    }
 
-            var buffer = new GasMixture(Air.Volume) {Temperature = Air.Temperature};
-            var atmosphereSystem = EntitySystem.Get<AtmosphereSystem>();
+    private void RemoveFromGridAtmos()
+    {
+        if (Grid == null)
+            return;
 
-            foreach (var newGroup in newGroups)
-            {
-                if (newGroup.Key is not IPipeNet newPipeNet)
-                    continue;
+        _atmosphereSystem?.RemovePipeNet(Grid.Value, this);
+    }
 
-                var newAir = newPipeNet.Air;
-                var newVolume = newGroup.Cast<PipeNode>().Sum(n => n.Volume);
-
-                buffer.Clear();
-                atmosphereSystem.Merge(buffer, Air);
-                buffer.Multiply(MathF.Min(newVolume / Air.Volume, 1f));
-                atmosphereSystem.Merge(newAir, buffer);
-            }
-        }
-
-        private void RemoveFromGridAtmos()
-        {
-            DebugTools.AssertNotNull(_atmosphereSystem);
-            _atmosphereSystem?.RemovePipeNet(this);
-        }
-
-        public override string GetDebugData()
-        {
-            return @$"Pressure: { Air.Pressure:G3}
+    public override string GetDebugData()
+    {
+        return @$"Pressure: { Air.Pressure:G3}
 Temperature: {Air.Temperature:G3}
 Volume: {Air.Volume:G3}";
-        }
     }
 }

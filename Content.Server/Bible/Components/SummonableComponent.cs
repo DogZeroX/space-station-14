@@ -1,7 +1,6 @@
-using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.Audio;
 using Robust.Shared.Prototypes;
-using Content.Shared.Actions.ActionTypes;
-using Robust.Shared.Utility;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
 namespace Content.Server.Bible.Components
 {
@@ -9,8 +8,19 @@ namespace Content.Server.Bible.Components
     /// This lets you summon a mob or item with an alternative verb on the item
     /// </summary>
     [RegisterComponent]
-    public sealed class SummonableComponent : Component
+    public sealed partial class SummonableComponent : Component
     {
+        /// <summary>
+        /// Default sound to play when entity is summoned.
+        /// </summary>
+        private static readonly ProtoId<SoundCollectionPrototype> DefaultSummonSound = new("Summon");
+
+        /// <summary>
+        /// Sound to play when entity is summoned.
+        /// </summary>
+        [DataField]
+        public SoundSpecifier SummonSound = new SoundCollectionSpecifier(DefaultSummonSound, AudioParams.Default.WithVolume(-4f));
+
         /// <summary>
         /// Used for a special item only the Chaplain can summon. Usually a mob, but supports regular items too.
         /// </summary>
@@ -18,7 +28,7 @@ namespace Content.Server.Bible.Components
         public string? SpecialItemPrototype = null;
         public bool AlreadySummoned = false;
 
-        [DataField("requriesBibleUser")]
+        [DataField("requiresBibleUser")]
         public bool RequiresBibleUser = true;
 
         /// <summary>
@@ -27,20 +37,15 @@ namespace Content.Server.Bible.Components
         [ViewVariables]
         public EntityUid? Summon = null;
 
-        [DataField("summonAction")]
-        public InstantAction SummonAction = new()
-        {
-            Icon = new SpriteSpecifier.Texture(new ResourcePath("Clothing/Head/Hats/witch.rsi/icon.png")),
-            Name = "bible-summon-verb",
-            Description = "bible-summon-verb-desc",
-            Event = new SummonActionEvent(),
-        };
+        [DataField("summonAction", customTypeSerializer: typeof(PrototypeIdSerializer<EntityPrototype>))]
+        public string SummonAction = "ActionBibleSummon";
+
+        [DataField("summonActionEntity")]
+        public EntityUid? SummonActionEntity;
 
         /// Used for respawning
-        [ViewVariables]
         [DataField("accumulator")]
         public float Accumulator = 0f;
-        [ViewVariables]
         [DataField("respawnTime")]
         public float RespawnTime = 180f;
     }

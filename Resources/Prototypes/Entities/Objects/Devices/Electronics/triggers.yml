@@ -17,14 +17,25 @@
     sprite: Objects/Devices/timer.rsi
     state: timer
   - type: Item
-    size: 5
+    size: Tiny
+  - type: StaticPrice
+    price: 40
   - type: PayloadTrigger
     components:
-    - type: OnUseTimerTrigger
+    - type: TriggerOnUse
+      keyOut: startTimer
+    - type: TimerTrigger
+      keysIn:
+      - startTimer
+      # use the default trigger key so it can activate any inserted payload
+      keyOut: trigger
       delay: 5
       delayOptions: [3, 5, 10, 15, 30]
       initialBeepDelay: 0
-      beepSound: /Audio/Machines/Nuke/general_beep.ogg
+      beepSound:
+        path: /Audio/Machines/Nuke/general_beep.ogg
+        params:
+          volume: -2
 
 - type: entity
   parent: TimerTrigger
@@ -35,7 +46,49 @@
   - type: Sprite
     sprite: Objects/Devices/signaltrigger.rsi
     state: signaltrigger
+  - type: StaticPrice
+    price: 40
+  - type: Tag
+    tags:
+    - SignalTrigger
   - type: PayloadTrigger
     components:
+    - type: DeviceNetwork
+      deviceNetId: Wireless
+      receiveFrequencyId: BasicDevice
+    - type: WirelessNetworkConnection
+      range: 200
+    - type: DeviceLinkSink
     - type: TriggerOnSignal
-    - type: SignalReceiver
+      keyOut: startTimer
+    - type: TimerTrigger
+      keysIn:
+      - startTimer
+      # use the default trigger key so it can activate any inserted payload
+      keyOut: trigger
+      delay: 3
+      initialBeepDelay: 0
+      beepSound:
+        path: /Audio/Machines/Nuke/general_beep.ogg
+        params:
+          volume: -2
+
+- type: entity
+  parent: BaseItem
+  id: VoiceTrigger
+  name: voice trigger
+  description: Adds a machine link that is triggered by vocal keywords.
+  components:
+  - type: Item
+    size: Tiny
+  - type: Sprite
+    sprite: Objects/Devices/voice.rsi
+    state: voice
+  - type: StaticPrice
+    price: 40
+  - type: Tag
+    tags:
+    - VoiceTrigger
+  - type: PayloadTrigger
+    components:
+    - type: TriggerOnVoice

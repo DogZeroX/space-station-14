@@ -1,48 +1,51 @@
 using Robust.Client.GameObjects;
 using Robust.Shared.GameObjects;
 
-namespace Content.Client.Markers
+namespace Content.Client.Markers;
+
+public sealed partial class MarkerSystem : EntitySystem
 {
-    public sealed class MarkerSystem : EntitySystem
+    [Dependency] private SpriteSystem _sprite = default!;
+
+    private bool _markersVisible;
+
+    public bool MarkersVisible
     {
-        private bool _markersVisible;
-
-        public bool MarkersVisible
+        get => _markersVisible;
+        set
         {
-            get => _markersVisible;
-            set
-            {
-                _markersVisible = value;
-                UpdateMarkers();
-            }
+            _markersVisible = value;
+            UpdateMarkers();
         }
+    }
 
-        public override void Initialize()
+    public override void Initialize()
+    {
+        base.Initialize();
+
+        SubscribeLocalEvent<MarkerComponent, ComponentStartup>(OnStartup);
+    }
+
+    private void OnStartup(EntityUid uid, MarkerComponent marker, ComponentStartup args)
+    {
+        UpdateVisibility(uid);
+    }
+
+    private void UpdateVisibility(EntityUid uid)
+    {
+        if (TryComp(uid, out SpriteComponent? sprite))
         {
-            base.Initialize();
-
-            SubscribeLocalEvent<MarkerComponent, ComponentStartup>(OnStartup);
+            _sprite.SetVisible((uid, sprite), MarkersVisible);
         }
+    }
 
-        private void OnStartup(EntityUid uid, MarkerComponent marker, ComponentStartup args)
-        {
-            UpdateVisibility(marker);
-        }
+    private void UpdateMarkers()
+    {
+        var query = AllEntityQuery<MarkerComponent>();
 
-        private void UpdateVisibility(MarkerComponent marker)
+        while (query.MoveNext(out var uid, out var comp))
         {
-            if (EntityManager.TryGetComponent(marker.Owner, out SpriteComponent? sprite))
-            {
-                sprite.Visible = MarkersVisible;
-            }
-        }
-
-        private void UpdateMarkers()
-        {
-            foreach (var markerComponent in EntityManager.EntityQuery<MarkerComponent>(true))
-            {
-                UpdateVisibility(markerComponent);
-            }
+            UpdateVisibility(uid);
         }
     }
 }

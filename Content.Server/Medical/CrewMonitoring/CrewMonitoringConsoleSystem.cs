@@ -1,103 +1,76 @@
 using System.Linq;
+using Content.Server.DeviceNetwork;
 using Content.Server.DeviceNetwork.Systems;
-using Content.Server.Medical.SuitSensors;
-using Content.Server.UserInterface;
+using Content.Shared.PowerCell;
+using Content.Shared.DeviceNetwork;
+using Content.Shared.DeviceNetwork.Events;
 using Content.Shared.Medical.CrewMonitoring;
-using Content.Shared.Movement.Components;
-using Robust.Shared.Map;
-using Robust.Shared.Timing;
+using Content.Shared.Medical.SuitSensor;
+using Content.Shared.Pinpointer;
+using Robust.Server.GameObjects;
 
-namespace Content.Server.Medical.CrewMonitoring
+namespace Content.Server.Medical.CrewMonitoring;
+
+public sealed partial class CrewMonitoringConsoleSystem : EntitySystem
 {
-    public sealed class CrewMonitoringConsoleSystem : EntitySystem
+    [Dependency] private PowerCellSystem _cell = default!;
+    [Dependency] private UserInterfaceSystem _uiSystem = default!;
+
+    public override void Initialize()
     {
-        [Dependency] private readonly SuitSensorSystem _sensors = default!;
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
-        [Dependency] private readonly IMapManager _mapManager = default!;
+        base.Initialize();
+        SubscribeLocalEvent<CrewMonitoringConsoleComponent, ComponentRemove>(OnRemove);
+        SubscribeLocalEvent<CrewMonitoringConsoleComponent, DeviceNetworkPacketEvent>(OnPacketReceived);
+        SubscribeLocalEvent<CrewMonitoringConsoleComponent, BoundUIOpenedEvent>(OnUIOpened);
+    }
 
-        private const float UpdateRate = 3f;
-        private float _updateDif;
+    private void OnRemove(EntityUid uid, CrewMonitoringConsoleComponent component, ComponentRemove args)
+    {
+        component.ConnectedSensors.Clear();
+    }
 
-        public override void Initialize()
-        {
-            base.Initialize();
-            SubscribeLocalEvent<CrewMonitoringConsoleComponent, ComponentRemove>(OnRemove);
-            SubscribeLocalEvent<CrewMonitoringConsoleComponent, DeviceNetworkPacketEvent>(OnPacketReceived);
-        }
+    private void OnPacketReceived(EntityUid uid, CrewMonitoringConsoleComponent component, DeviceNetworkPacketEvent args)
+    {
+        var payload = args.Data;
 
-        public override void Update(float frameTime)
-        {
-            base.Update(frameTime);
+        // Check command
+        if (!payload.TryGetValue(DeviceNetworkConstants.Command, out string? command))
+            return;
 
-            // check update rate
-            _updateDif += frameTime;
-            if (_updateDif < UpdateRate)
-                return;
-            _updateDif = 0f;
+        if (command != DeviceNetworkConstants.CmdUpdatedState)
+            return;
 
-            var consoles = EntityManager.EntityQuery<CrewMonitoringConsoleComponent>();
-            foreach (var console in consoles)
-            {
-                UpdateTimeouts(console.Owner, console);
-                UpdateUserInterface(console.Owner, console);
-            }
-        }
+        if (!payload.TryGetValue(SuitSensorConstants.NET_STATUS_COLLECTION, out Dictionary<string, SuitSensorStatus>? sensorStatus))
+            return;
 
-        private void OnRemove(EntityUid uid, CrewMonitoringConsoleComponent component, ComponentRemove args)
-        {
-            component.ConnectedSensors.Clear();
-        }
+        component.ConnectedSensors = sensorStatus;
+        UpdateUserInterface(uid, component);
+    }
 
-        private void OnPacketReceived(EntityUid uid, CrewMonitoringConsoleComponent component, DeviceNetworkPacketEvent args)
-        {
-            var suitSensor = _sensors.PacketToSuitSensor(args.Data);
-            if (suitSensor == null)
-                return;
+    private void OnUIOpened(EntityUid uid, CrewMonitoringConsoleComponent component, BoundUIOpenedEvent args)
+    {
+        if (!_cell.TryUseActivatableCharge(uid))
+            return;
 
-            suitSensor.Timestamp = _gameTiming.CurTime;
-            component.ConnectedSensors[args.SenderAddress] = suitSensor;
-        }
+        UpdateUserInterface(uid, component);
+    }
 
-        private void UpdateUserInterface(EntityUid uid, CrewMonitoringConsoleComponent? component = null)
-        {
-            if (!Resolve(uid, ref component))
-                return;
+    private void UpdateUserInterface(EntityUid uid, CrewMonitoringConsoleComponent? component = null)
+    {
+        if (!Resolve(uid, ref component))
+            return;
 
-            var ui = component.Owner.GetUIOrNull(CrewMonitoringUIKey.Key);
-            if (ui == null)
-                return;
+        if (!_uiSystem.IsUiOpen(uid, CrewMonitoringUIKey.Key))
+            return;
 
-            // For directional arrows, we need to fetch the monitor's transform data
-            var xform = Transform(uid);
-            var (worldPos, worldRot) = xform.GetWorldPositionRotation();
+        // The grid must have a NavMapComponent to visualize the map in the UI
+        var xform = Transform(uid);
 
-            // In general, the directions displayed depend on either the orientation of the grid, or the orientation of
-            // the monitor. But in the special case where the monitor IS a player (i.e., admin ghost), we base it off
-            // the players eye rotation. We don't know what that is for sure, but we know their last grid angle, which
-            // should work well enough?
-            if (TryComp(uid, out IMoverComponent? mover))
-                worldRot = mover.LastGridAngle;
-            else if (_mapManager.TryGetGrid(xform.GridID, out var grid))
-                worldRot = grid.WorldRotation;
+        if (xform.GridUid != null)
+            EnsureComp<NavMapComponent>(xform.GridUid.Value);
 
-            // update all sensors info
-            var allSensors = component.ConnectedSensors.Values.ToList();
-            var uiState = new CrewMonitoringState(allSensors, worldPos, worldRot, component.Snap, component.Precision);
-            ui.SetState(uiState);
-        }
-
-        private void UpdateTimeouts(EntityUid uid, CrewMonitoringConsoleComponent? component = null)
-        {
-            if (!Resolve(uid, ref component))
-                return;
-
-            foreach (var (address, sensor) in component.ConnectedSensors)
-            {
-                // if too many time passed - sensor just dropped connection
-                var dif = _gameTiming.CurTime - sensor.Timestamp;
-                if (dif.Seconds > component.SensorTimeout)
-                    component.ConnectedSensors.Remove(address);
-            }
-        }
+        // Update all sensors info
+        var allSensors = component.ConnectedSensors.Values.ToList();
+        _uiSystem.SetUiState(uid, CrewMonitoringUIKey.Key, new CrewMonitoringState(allSensors));
     }
 }

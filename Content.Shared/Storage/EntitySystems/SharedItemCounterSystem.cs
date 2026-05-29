@@ -6,8 +6,10 @@ using Robust.Shared.Containers;
 namespace Content.Shared.Storage.EntitySystems
 {
     [UsedImplicitly]
-    public abstract class SharedItemCounterSystem : EntitySystem
+    public abstract partial class SharedItemCounterSystem : EntitySystem
     {
+        [Dependency] private SharedAppearanceSystem _appearance = default!;
+
         /// <inheritdoc />
         public override void Initialize()
         {
@@ -19,30 +21,32 @@ namespace Content.Shared.Storage.EntitySystems
         private void CounterEntityInserted(EntityUid uid, ItemCounterComponent itemCounter,
             EntInsertedIntoContainerMessage args)
         {
-            if (!EntityManager.TryGetComponent(itemCounter.Owner, out AppearanceComponent? appearanceComponent)) return;
+            if (!TryComp(uid, out AppearanceComponent? appearanceComponent))
+                return;
 
             var count = GetCount(args, itemCounter);
             if (count == null)
                 return;
 
-            appearanceComponent.SetData(StackVisuals.Actual, count);
-            if (itemCounter.MaxAmount != null)
-                appearanceComponent.SetData(StackVisuals.MaxCount, itemCounter.MaxAmount);
+            _appearance.SetData(uid, StackVisuals.Actual, count, appearanceComponent);
 
+            if (itemCounter.MaxAmount != null)
+                _appearance.SetData(uid, StackVisuals.MaxCount, itemCounter.MaxAmount, appearanceComponent);
         }
 
         private void CounterEntityRemoved(EntityUid uid, ItemCounterComponent itemCounter,
             EntRemovedFromContainerMessage args)
         {
-            if (!EntityManager.TryGetComponent(itemCounter.Owner, out AppearanceComponent? appearanceComponent)) return;
+            if (!TryComp(uid, out AppearanceComponent? appearanceComponent))
+                return;
 
             var count = GetCount(args, itemCounter);
             if (count == null)
                 return;
 
-            appearanceComponent.SetData(StackVisuals.Actual, count);
+            _appearance.SetData(uid, StackVisuals.Actual, count, appearanceComponent);
             if (itemCounter.MaxAmount != null)
-                appearanceComponent.SetData(StackVisuals.MaxCount, itemCounter.MaxAmount);
+                _appearance.SetData(uid, StackVisuals.MaxCount, itemCounter.MaxAmount, appearanceComponent);
         }
 
         protected abstract int? GetCount(ContainerModifiedMessage msg, ItemCounterComponent itemCounter);

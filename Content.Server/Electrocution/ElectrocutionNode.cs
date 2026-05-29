@@ -1,27 +1,31 @@
 using Content.Server.NodeContainer;
+using Content.Server.NodeContainer.EntitySystems;
 using Content.Server.NodeContainer.Nodes;
-using Robust.Shared.Map;
+using Content.Shared.NodeContainer;
+using Robust.Shared.Map.Components;
 
 namespace Content.Server.Electrocution
 {
     [DataDefinition]
-    public sealed class ElectrocutionNode : Node
+    public sealed partial class ElectrocutionNode : Node
     {
         [DataField("cable")]
-        public EntityUid CableEntity;
+        public EntityUid? CableEntity;
         [DataField("node")]
-        public string NodeName = default!;
+        public string? NodeName;
 
-        public override IEnumerable<Node> GetReachableNodes(TransformComponent xform,
+        public override IEnumerable<Node> GetReachableNodes(
+            Entity<TransformComponent> xform,
             EntityQuery<NodeContainerComponent> nodeQuery,
             EntityQuery<TransformComponent> xformQuery,
-            IMapGrid? grid,
+            Entity<MapGridComponent>? grid,
             IEntityManager entMan)
         {
-            if (!nodeQuery.TryGetComponent(CableEntity, out var nodeContainer))
+            if (CableEntity == null || NodeName == null)
                 yield break;
 
-            if (nodeContainer.TryGetNode(NodeName, out Node? node))
+            var _nodeContainer = entMan.System<NodeContainerSystem>();
+            if (_nodeContainer.TryGetNode(CableEntity.Value, NodeName, out Node? node))
                 yield return node;
         }
     }

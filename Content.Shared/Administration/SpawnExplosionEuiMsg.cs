@@ -2,14 +2,12 @@ using Content.Shared.Eui;
 using Robust.Shared.Serialization;
 using Robust.Shared.Map;
 using Content.Shared.Explosion;
+using Content.Shared.Explosion.Components;
 
 namespace Content.Shared.Administration;
 
 public static class SpawnExplosionEuiMsg
 {
-    [Serializable, NetSerializable]
-    public sealed class Close : EuiMessageBase { }
-
     /// <summary>
     ///     This message is sent to the server to request explosion preview data.
     /// </summary>
@@ -40,9 +38,9 @@ public static class SpawnExplosionEuiMsg
     {
         public readonly float Slope;
         public readonly float TotalIntensity;
-        public readonly ExplosionEvent Explosion;
+        public readonly ExplosionVisualsState Explosion;
 
-        public PreviewData(ExplosionEvent explosion, float slope, float totalIntensity)
+        public PreviewData(ExplosionVisualsState explosion, float slope, float totalIntensity)
         {
             Slope = slope;
             TotalIntensity = totalIntensity;

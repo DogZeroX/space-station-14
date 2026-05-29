@@ -1,13 +1,13 @@
-using Content.Server.Storage.Components;
 using Content.Shared.Construction;
 using Content.Shared.Examine;
+using Content.Shared.Lock;
 using JetBrains.Annotations;
 
 namespace Content.Server.Construction.Conditions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class Locked : IGraphCondition
+    public sealed partial class Locked : IGraphCondition
     {
         [DataField("locked")]
         public bool IsLocked { get; private set; } = true;
@@ -15,7 +15,7 @@ namespace Content.Server.Construction.Conditions
         public bool Condition(EntityUid uid, IEntityManager entityManager)
         {
             if (!entityManager.TryGetComponent(uid, out LockComponent? lockcomp))
-                return false;
+                return true;
 
             return lockcomp.Locked == IsLocked;
         }
@@ -25,7 +25,8 @@ namespace Content.Server.Construction.Conditions
             var entMan = IoCManager.Resolve<IEntityManager>();
             var entity = args.Examined;
 
-            if (!entMan.TryGetComponent(entity, out LockComponent? lockcomp)) return false;
+            if (!entMan.TryGetComponent(entity, out LockComponent? lockcomp))
+                return true;
 
             switch (IsLocked)
             {

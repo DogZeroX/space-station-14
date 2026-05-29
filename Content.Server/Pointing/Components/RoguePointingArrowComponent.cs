@@ -4,8 +4,8 @@ using Content.Shared.Pointing.Components;
 namespace Content.Server.Pointing.Components
 {
     [RegisterComponent]
-    [Friend(typeof(RoguePointingSystem))]
-    public sealed class RoguePointingArrowComponent : SharedRoguePointingArrowComponent
+    [Access(typeof(RoguePointingSystem))]
+    public sealed partial class RoguePointingArrowComponent : SharedRoguePointingArrowComponent
     {
         [ViewVariables]
         public EntityUid? Chasing;

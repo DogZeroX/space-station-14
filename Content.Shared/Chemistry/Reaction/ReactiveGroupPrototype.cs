@@ -2,9 +2,9 @@
 
 namespace Content.Shared.Chemistry.Reaction;
 
-[Prototype("reactiveGroup")]
-public sealed class ReactiveGroupPrototype : IPrototype
+[Prototype]
+public sealed partial class ReactiveGroupPrototype : IPrototype
 {
-    [IdDataFieldAttribute]
-    public string ID { get; } = default!;
+    [IdDataField]
+    public string ID { get; private set; } = default!;
 }

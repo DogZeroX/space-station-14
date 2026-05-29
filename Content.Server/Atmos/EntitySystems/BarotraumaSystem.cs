@@ -1,132 +1,201 @@
+using System.Diagnostics.CodeAnalysis;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.Components;
 using Content.Shared.Alert;
 using Content.Shared.Atmos;
-using Content.Shared.Damage;
+using Content.Shared.Damage.Components;
+using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
 using Content.Shared.FixedPoint;
 using Content.Shared.Inventory;
+using Content.Shared.Inventory.Events;
 using Robust.Shared.Containers;
 
 namespace Content.Server.Atmos.EntitySystems
 {
-    public sealed class BarotraumaSystem : EntitySystem
+    public sealed partial class BarotraumaSystem : EntitySystem
     {
-        [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
-        [Dependency] private readonly DamageableSystem _damageableSystem = default!;
-        [Dependency] private readonly AlertsSystem _alertsSystem = default!;
-        [Dependency] private readonly AdminLogSystem _logSystem = default!;
-        [Dependency] private readonly InventorySystem _inventorySystem = default!;
+        [Dependency] private AtmosphereSystem _atmosphereSystem = default!;
+        [Dependency] private DamageableSystem _damageableSystem = default!;
+        [Dependency] private AlertsSystem _alertsSystem = default!;
+        [Dependency] private IAdminLogManager _adminLogger= default!;
+        [Dependency] private InventorySystem _inventorySystem = default!;
 
         private const float UpdateTimer = 1f;
         private float _timer;
 
         public override void Initialize()
         {
-            SubscribeLocalEvent<PressureProtectionComponent, HighPressureEvent>(OnHighPressureEvent);
-            SubscribeLocalEvent<PressureProtectionComponent, LowPressureEvent>(OnLowPressureEvent);
+            SubscribeLocalEvent<PressureProtectionComponent, GotEquippedEvent>(OnPressureProtectionEquipped);
+            SubscribeLocalEvent<PressureProtectionComponent, GotUnequippedEvent>(OnPressureProtectionUnequipped);
+            SubscribeLocalEvent<PressureProtectionComponent, ComponentInit>(OnUpdateResistance);
+            SubscribeLocalEvent<PressureProtectionComponent, ComponentRemove>(OnUpdateResistance);
 
-            SubscribeLocalEvent<PressureImmunityComponent, HighPressureEvent>(OnHighPressureImmuneEvent);
-            SubscribeLocalEvent<PressureImmunityComponent, LowPressureEvent>(OnLowPressureImmuneEvent);
-
+            SubscribeLocalEvent<PressureImmunityComponent, ComponentInit>(OnPressureImmuneInit);
+            SubscribeLocalEvent<PressureImmunityComponent, ComponentRemove>(OnPressureImmuneRemove);
         }
 
-        private void OnHighPressureEvent(EntityUid uid, PressureProtectionComponent component, HighPressureEvent args)
+        private void OnPressureImmuneInit(EntityUid uid, PressureImmunityComponent pressureImmunity, ComponentInit args)
         {
-            args.Modifier += component.HighPressureModifier;
-            args.Multiplier *= component.HighPressureMultiplier;
+            if (TryComp<BarotraumaComponent>(uid, out var barotrauma))
+            {
+                barotrauma.HasImmunity = true;
+            }
         }
 
-        private void OnLowPressureEvent(EntityUid uid, PressureProtectionComponent component, LowPressureEvent args)
+        private void OnPressureImmuneRemove(EntityUid uid, PressureImmunityComponent pressureImmunity, ComponentRemove args)
         {
-            args.Modifier += component.LowPressureModifier;
-            args.Multiplier *= component.LowPressureMultiplier;
-        }
-
-
-        /// <summary>
-        /// Completely prevent high pressure damage
-        /// </summary>
-        private void OnHighPressureImmuneEvent(EntityUid uid, PressureImmunityComponent component, HighPressureEvent args)
-        {
-            args.Multiplier = 0;
+            if (TryComp<BarotraumaComponent>(uid, out var barotrauma))
+            {
+                barotrauma.HasImmunity = false;
+            }
         }
 
         /// <summary>
-        /// Completely prevent low pressure damage
+        /// Generic method for updating resistance on component Lifestage events
         /// </summary>
-        private void OnLowPressureImmuneEvent(EntityUid uid, PressureImmunityComponent component, LowPressureEvent args)
+        private void OnUpdateResistance(EntityUid uid, PressureProtectionComponent pressureProtection, EntityEventArgs args)
         {
-            args.Modifier = 100;
-            args.Multiplier = 10000;
+            if (TryComp<BarotraumaComponent>(uid, out var barotrauma))
+            {
+                UpdateCachedResistances(uid, barotrauma);
+            }
         }
 
-        public float GetFeltLowPressure(BarotraumaComponent baro, float environmentPressure)
+        private void OnPressureProtectionEquipped(EntityUid uid, PressureProtectionComponent pressureProtection, GotEquippedEvent args)
         {
-            var modifier = float.MaxValue;
-            var multiplier = float.MaxValue;
-
-            TryComp(baro.Owner, out InventoryComponent? inv);
-            TryComp(baro.Owner, out ContainerManagerComponent? contMan);
-
-            // TODO: cache this & update when equipment changes?
-            // This continuously raises events for every player in space.
-
-            // First, check if for protective equipment
-            foreach (var slot in baro.ProtectionSlots)
+            if (TryComp<BarotraumaComponent>(args.EquipTarget, out var barotrauma) && barotrauma.ProtectionSlots.Contains(args.Slot))
             {
-                if (!_inventorySystem.TryGetSlotEntity(baro.Owner, slot, out var equipment, inv, contMan)
-                    || ! TryComp(equipment, out PressureProtectionComponent? protection))
-                {
-                    // Missing protection, skin is exposed.
-                    modifier = 0;
-                    multiplier = 1;
-                    break;
-                }
-
-                modifier = Math.Min(protection.LowPressureModifier, modifier);
-                multiplier = Math.Min(protection.LowPressureMultiplier, multiplier);
+                UpdateCachedResistances(args.EquipTarget, barotrauma);
             }
-
-            // Then apply any generic, non-clothing related modifiers.
-            var lowPressureEvent = new LowPressureEvent(environmentPressure);
-            RaiseLocalEvent(baro.Owner, lowPressureEvent, false);
-
-            return (environmentPressure + modifier + lowPressureEvent.Modifier) * (multiplier * lowPressureEvent.Multiplier);
         }
 
-        public float GetFeltHighPressure(BarotraumaComponent baro, float environmentPressure)
+        private void OnPressureProtectionUnequipped(EntityUid uid, PressureProtectionComponent pressureProtection, GotUnequippedEvent args)
         {
-            var modifier = float.MinValue;
-            var multiplier = float.MinValue;
-
-            TryComp(baro.Owner, out InventoryComponent? inv);
-            TryComp(baro.Owner, out ContainerManagerComponent? contMan);
-
-            // TODO: cache this & update when equipment changes?
-            // Not as import and as low-pressure, but probably still useful.
-
-            // First, check if for protective equipment
-            foreach (var slot in baro.ProtectionSlots)
+            if (TryComp<BarotraumaComponent>(args.EquipTarget, out var barotrauma) && barotrauma.ProtectionSlots.Contains(args.Slot))
             {
-                if (!_inventorySystem.TryGetSlotEntity(baro.Owner, slot, out var equipment, inv, contMan)
-                    || !TryComp(equipment, out PressureProtectionComponent? protection))
+                UpdateCachedResistances(args.EquipTarget, barotrauma);
+            }
+        }
+
+        /// <summary>
+        /// Computes the pressure resistance for the entity coming from the equipment and any innate resistance.
+        /// The ProtectionSlots field of the Barotrauma component specifies which parts must be protected for the protection to have any effet.
+        /// </summary>
+        private void UpdateCachedResistances(EntityUid uid, BarotraumaComponent barotrauma)
+        {
+
+            if (barotrauma.ProtectionSlots.Count != 0)
+            {
+                if (!TryComp(uid, out InventoryComponent? inv) || !TryComp(uid, out ContainerManagerComponent? contMan))
                 {
-                    // Missing protection, skin is exposed.
-                    modifier = 0;
-                    multiplier = 1;
-                    break;
+                    return;
+                }
+                var hPModifier = float.MinValue;
+                var hPMultiplier = float.MinValue;
+                var lPModifier = float.MaxValue;
+                var lPMultiplier = float.MaxValue;
+
+                foreach (var slot in barotrauma.ProtectionSlots)
+                {
+                    if (!_inventorySystem.TryGetSlotEntity(uid, slot, out var equipment, inv, contMan)
+                        || !TryGetPressureProtectionValues(equipment.Value,
+                            out var itemHighMultiplier,
+                            out var itemHighModifier,
+                            out var itemLowMultiplier,
+                            out var itemLowModifier))
+                    {
+                        // Missing protection, skin is exposed.
+                        hPModifier = 0f;
+                        hPMultiplier = 1f;
+                        lPModifier = 0f;
+                        lPMultiplier = 1f;
+                        break;
+                    }
+
+                    // The entity is as protected as its weakest part protection
+                    hPModifier = Math.Max(hPModifier, itemHighModifier.Value);
+                    hPMultiplier = Math.Max(hPMultiplier, itemHighMultiplier.Value);
+                    lPModifier = Math.Min(lPModifier, itemLowModifier.Value);
+                    lPMultiplier = Math.Min(lPMultiplier, itemLowMultiplier.Value);
                 }
 
-                modifier = Math.Max(protection.LowPressureModifier, modifier);
-                multiplier = Math.Max(protection.LowPressureMultiplier, multiplier);
+                barotrauma.HighPressureModifier = hPModifier;
+                barotrauma.HighPressureMultiplier = hPMultiplier;
+                barotrauma.LowPressureModifier = lPModifier;
+                barotrauma.LowPressureMultiplier = lPMultiplier;
             }
 
-            // Then apply any generic, non-clothing related modifiers.
-            var highPressureEvent = new HighPressureEvent(environmentPressure);
-            RaiseLocalEvent(baro.Owner, highPressureEvent, false);
+            // any innate pressure resistance ?
+            if (TryGetPressureProtectionValues(uid,
+                    out var highMultiplier,
+                    out var highModifier,
+                    out var lowMultiplier,
+                    out var lowModifier))
+            {
+                barotrauma.HighPressureModifier += highModifier.Value;
+                barotrauma.HighPressureMultiplier *= highMultiplier.Value;
+                barotrauma.LowPressureModifier += lowModifier.Value;
+                barotrauma.LowPressureMultiplier *= lowMultiplier.Value;
+            }
+        }
 
-            return (environmentPressure + modifier + highPressureEvent.Modifier) * (multiplier * highPressureEvent.Multiplier);
+        /// <summary>
+        /// Returns adjusted pressure after having applied resistances from equipment and innate (if any), to check against a low pressure hazard threshold
+        /// </summary>
+        public float GetFeltLowPressure(EntityUid uid, BarotraumaComponent barotrauma, float environmentPressure)
+        {
+            if (barotrauma.HasImmunity)
+            {
+                return Atmospherics.OneAtmosphere;
+            }
+
+            var modified = (environmentPressure + barotrauma.LowPressureModifier) * (barotrauma.LowPressureMultiplier);
+            return Math.Min(modified, Atmospherics.OneAtmosphere);
+        }
+
+        /// <summary>
+        /// Returns adjusted pressure after having applied resistances from equipment and innate (if any), to check against a high pressure hazard threshold
+        /// </summary>
+        public float GetFeltHighPressure(EntityUid uid, BarotraumaComponent barotrauma, float environmentPressure)
+        {
+            if (barotrauma.HasImmunity)
+            {
+                return Atmospherics.OneAtmosphere;
+            }
+
+            var modified = (environmentPressure + barotrauma.HighPressureModifier) * (barotrauma.HighPressureMultiplier);
+            return Math.Max(modified, Atmospherics.OneAtmosphere);
+        }
+
+        public bool TryGetPressureProtectionValues(
+            Entity<PressureProtectionComponent?> ent,
+            [NotNullWhen(true)] out float? highMultiplier,
+            [NotNullWhen(true)] out float? highModifier,
+            [NotNullWhen(true)] out float? lowMultiplier,
+            [NotNullWhen(true)] out float? lowModifier)
+        {
+            highMultiplier = null;
+            highModifier = null;
+            lowMultiplier = null;
+            lowModifier = null;
+            if (!Resolve(ent, ref ent.Comp, false))
+                return false;
+
+            var comp = ent.Comp;
+            var ev = new GetPressureProtectionValuesEvent
+            {
+                HighPressureMultiplier = comp.HighPressureMultiplier,
+                HighPressureModifier = comp.HighPressureModifier,
+                LowPressureMultiplier = comp.LowPressureMultiplier,
+                LowPressureModifier = comp.LowPressureModifier
+            };
+            RaiseLocalEvent(ent, ref ev);
+            highMultiplier = ev.HighPressureMultiplier;
+            highModifier = ev.HighPressureModifier;
+            lowMultiplier = ev.LowPressureMultiplier;
+            lowModifier = ev.LowPressureModifier;
+            return true;
         }
 
         public override void Update(float frameTime)
@@ -138,12 +207,14 @@ namespace Content.Server.Atmos.EntitySystems
 
             _timer -= UpdateTimer;
 
-            foreach (var (barotrauma, damageable, transform) in EntityManager.EntityQuery<BarotraumaComponent, DamageableComponent, TransformComponent>())
+            var enumerator = EntityQueryEnumerator<BarotraumaComponent, DamageableComponent>();
+            while (enumerator.MoveNext(out var uid, out var barotrauma, out var damageable))
             {
                 var totalDamage = FixedPoint2.Zero;
+                var damageSpecifier = _damageableSystem.GetAllDamage((uid, damageable));
                 foreach (var (barotraumaDamageType, _) in barotrauma.Damage.DamageDict)
                 {
-                    if (!damageable.Damage.DamageDict.TryGetValue(barotraumaDamageType, out var damage))
+                    if (!damageSpecifier.DamageDict.TryGetValue(barotraumaDamageType, out var damage))
                         continue;
                     totalDamage += damage;
                 }
@@ -152,74 +223,69 @@ namespace Content.Server.Atmos.EntitySystems
 
                 var pressure = 1f;
 
-                if (_atmosphereSystem.GetTileMixture(transform.Coordinates) is { } mixture)
+                if (_atmosphereSystem.GetContainingMixture(uid) is {} mixture)
                 {
                     pressure = MathF.Max(mixture.Pressure, 1f);
                 }
 
-                switch (pressure)
+                pressure = pressure switch
                 {
-                    // Low pressure.
-                    case <= Atmospherics.WarningLowPressure:
-                        pressure = GetFeltLowPressure(barotrauma, pressure);
+                    // Adjust pressure based on equipment. Works differently depending on if it's "high" or "low".
+                    <= Atmospherics.WarningLowPressure => GetFeltLowPressure(uid, barotrauma, pressure),
+                    >= Atmospherics.WarningHighPressure => GetFeltHighPressure(uid, barotrauma, pressure),
+                    _ => pressure
+                };
 
-                        if (pressure > Atmospherics.WarningLowPressure)
-                            goto default;
+                if (pressure <= Atmospherics.HazardLowPressure)
+                {
+                    // Deal damage and ignore resistances. Resistance to pressure damage should be done via pressure protection gear.
+                    _damageableSystem.TryChangeDamage(uid, barotrauma.Damage * Atmospherics.LowPressureDamage, true, false);
 
-                        // Deal damage and ignore resistances. Resistance to pressure damage should be done via pressure protection gear.
-                        _damageableSystem.TryChangeDamage(barotrauma.Owner, barotrauma.Damage * Atmospherics.LowPressureDamage, true, false);
+                    if (!barotrauma.TakingDamage)
+                    {
+                        barotrauma.TakingDamage = true;
+                        _adminLogger.Add(LogType.Barotrauma, $"{ToPrettyString(uid):entity} started taking low pressure damage");
+                    }
 
-                        if (!barotrauma.TakingDamage)
-                        {
-                            barotrauma.TakingDamage = true;
-                            _logSystem.Add(LogType.Barotrauma, $"{ToPrettyString(barotrauma.Owner):entity} started taking low pressure damage");
-                        }
+                    _alertsSystem.ShowAlert(uid, barotrauma.LowPressureAlert, 2);
+                }
+                else if (pressure >= Atmospherics.HazardHighPressure)
+                {
+                    var damageScale = MathF.Min(((pressure / Atmospherics.HazardHighPressure) - 1) * Atmospherics.PressureDamageCoefficient, Atmospherics.MaxHighPressureDamage);
 
-                        if (pressure <= Atmospherics.HazardLowPressure)
-                        {
-                            _alertsSystem.ShowAlert(barotrauma.Owner, AlertType.LowPressure, 2);
+                    // Deal damage and ignore resistances. Resistance to pressure damage should be done via pressure protection gear.
+                    _damageableSystem.TryChangeDamage(uid, barotrauma.Damage * damageScale, true, false);
+
+                    if (!barotrauma.TakingDamage)
+                    {
+                        barotrauma.TakingDamage = true;
+                        _adminLogger.Add(LogType.Barotrauma, $"{ToPrettyString(uid):entity} started taking high pressure damage");
+                    }
+
+                    _alertsSystem.ShowAlert(uid, barotrauma.HighPressureAlert, 2);
+                }
+                else
+                {
+                    // Within safe pressure limits
+                    if (barotrauma.TakingDamage)
+                    {
+                        barotrauma.TakingDamage = false;
+                        _adminLogger.Add(LogType.Barotrauma, $"{ToPrettyString(uid):entity} stopped taking pressure damage");
+                    }
+
+                    // Set correct alert.
+                    switch (pressure)
+                    {
+                        case <= Atmospherics.WarningLowPressure:
+                            _alertsSystem.ShowAlert(uid, barotrauma.LowPressureAlert, 1);
                             break;
-                        }
-
-                        _alertsSystem.ShowAlert(barotrauma.Owner, AlertType.LowPressure, 1);
-                        break;
-
-                    // High pressure.
-                    case >= Atmospherics.WarningHighPressure:
-                        pressure = GetFeltHighPressure(barotrauma, pressure);
-
-                        if(pressure < Atmospherics.WarningHighPressure)
-                            goto default;
-
-                        var damageScale = MathF.Min((pressure / Atmospherics.HazardHighPressure) * Atmospherics.PressureDamageCoefficient, Atmospherics.MaxHighPressureDamage);
-
-                        // Deal damage and ignore resistances. Resistance to pressure damage should be done via pressure protection gear.
-                        _damageableSystem.TryChangeDamage(barotrauma.Owner, barotrauma.Damage * damageScale, true, false);
-
-                        if (!barotrauma.TakingDamage)
-                        {
-                            barotrauma.TakingDamage = true;
-                            _logSystem.Add(LogType.Barotrauma, $"{ToPrettyString(barotrauma.Owner):entity} started taking high pressure damage");
-                        }
-
-                        if (pressure >= Atmospherics.HazardHighPressure)
-                        {
-                            _alertsSystem.ShowAlert(barotrauma.Owner, AlertType.HighPressure, 2);
+                        case >= Atmospherics.WarningHighPressure:
+                            _alertsSystem.ShowAlert(uid, barotrauma.HighPressureAlert, 1);
                             break;
-                        }
-
-                        _alertsSystem.ShowAlert(barotrauma.Owner, AlertType.HighPressure, 1);
-                        break;
-
-                    // Normal pressure.
-                    default:
-                        if (barotrauma.TakingDamage)
-                        {
-                            barotrauma.TakingDamage = false;
-                            _logSystem.Add(LogType.Barotrauma, $"{ToPrettyString(barotrauma.Owner):entity} stopped taking pressure damage");
-                        }
-                        _alertsSystem.ClearAlertCategory(barotrauma.Owner, AlertCategory.Pressure);
-                        break;
+                        default:
+                            _alertsSystem.ClearAlertCategory(uid, barotrauma.PressureAlertCategory);
+                            break;
+                    }
                 }
             }
         }

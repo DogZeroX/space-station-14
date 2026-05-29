@@ -1,5 +1,8 @@
 using Content.Shared.Access.Systems;
+using Content.Shared.StatusIcon;
 using Robust.Client.GameObjects;
+using Robust.Client.UserInterface;
+using Robust.Shared.Prototypes;
 
 namespace Content.Client.Access.UI
 {
@@ -10,7 +13,7 @@ namespace Content.Client.Access.UI
     {
         private AgentIDCardWindow? _window;
 
-        public AgentIDCardBoundUserInterface(ClientUserInterfaceComponent owner, object uiKey) : base(owner, uiKey)
+        public AgentIDCardBoundUserInterface(EntityUid owner, Enum uiKey) : base(owner, uiKey)
         {
         }
 
@@ -18,15 +21,11 @@ namespace Content.Client.Access.UI
         {
             base.Open();
 
-            _window = new AgentIDCardWindow();
-            if (State != null)
-                UpdateState(State);
+            _window = this.CreateWindow<AgentIDCardWindow>();
 
-            _window.OpenCentered();
-
-            _window.OnClose += Close;
-            _window.OnNameEntered += OnNameChanged;
-            _window.OnJobEntered += OnJobChanged;
+            _window.OnNameChanged += OnNameChanged;
+            _window.OnJobChanged += OnJobChanged;
+            _window.OnJobIconChanged += OnJobIconChanged;
         }
 
         private void OnNameChanged(string newName)
@@ -37,6 +36,11 @@ namespace Content.Client.Access.UI
         private void OnJobChanged(string newJob)
         {
             SendMessage(new AgentIDCardJobChangedMessage(newJob));
+        }
+
+        public void OnJobIconChanged(ProtoId<JobIconPrototype> newJobIconId)
+        {
+            SendMessage(new AgentIDCardJobIconChangedMessage(newJobIconId));
         }
 
         /// <summary>
@@ -51,14 +55,7 @@ namespace Content.Client.Access.UI
 
             _window.SetCurrentName(cast.CurrentName);
             _window.SetCurrentJob(cast.CurrentJob);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-            if (!disposing) return;
-            _window?.Dispose();
+            _window.SetAllowedIcons(cast.CurrentJobIconId);
         }
     }
-
 }

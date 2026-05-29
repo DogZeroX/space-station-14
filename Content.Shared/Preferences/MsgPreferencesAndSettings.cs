@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using Lidgren.Network;
 using Robust.Shared.Network;
 using Robust.Shared.Serialization;
@@ -15,25 +15,26 @@ namespace Content.Shared.Preferences
         public PlayerPreferences Preferences = default!;
         public GameSettings Settings = default!;
 
-        public override void ReadFromBuffer(NetIncomingMessage buffer)
+        public override void ReadFromBuffer(NetIncomingMessage buffer, IRobustSerializer serializer)
         {
-            var serializer = IoCManager.Resolve<IRobustSerializer>();
             var length = buffer.ReadVariableInt32();
-            using (var stream = buffer.ReadAlignedMemory(length))
+
+            using (var stream = new MemoryStream())
             {
+                buffer.ReadAlignedMemory(stream, length);
                 serializer.DeserializeDirect(stream, out Preferences);
             }
 
             length = buffer.ReadVariableInt32();
-            using (var stream = buffer.ReadAlignedMemory(length))
+            using (var stream = new MemoryStream())
             {
+                buffer.ReadAlignedMemory(stream, length);
                 serializer.DeserializeDirect(stream, out Settings);
             }
         }
 
-        public override void WriteToBuffer(NetOutgoingMessage buffer)
+        public override void WriteToBuffer(NetOutgoingMessage buffer, IRobustSerializer serializer)
         {
-            var serializer = IoCManager.Resolve<IRobustSerializer>();
             using (var stream = new MemoryStream())
             {
                 serializer.SerializeDirect(stream, Preferences);

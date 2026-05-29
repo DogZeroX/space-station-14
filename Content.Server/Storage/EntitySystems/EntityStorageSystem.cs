@@ -1,68 +1,123 @@
-﻿using System.Linq;
-using Content.Server.Popups;
-using Content.Server.Storage.Components;
-using Content.Server.Tools.Systems;
-using Content.Shared.Destructible;
-using Robust.Shared.Physics;
-using Robust.Shared.Player;
+using Content.Server.Atmos.EntitySystems;
+using Content.Server.Body.Systems;
+using Content.Server.Construction;
+using Content.Server.Construction.Components;
+using Content.Shared.Atmos;
+using Content.Shared.Storage.Components;
+using Content.Shared.Storage.EntitySystems;
+using Robust.Server.GameObjects;
+using Robust.Shared.Map;
 
 namespace Content.Server.Storage.EntitySystems;
 
-public sealed class EntityStorageSystem : EntitySystem
+public sealed partial class EntityStorageSystem : SharedEntityStorageSystem
 {
-    [Dependency] private readonly PopupSystem _popupSystem = default!;
+    [Dependency] private ConstructionSystem _construction = default!;
+    [Dependency] private AtmosphereSystem _atmos = default!;
+    [Dependency] private IMapManager _map = default!;
+    [Dependency] private MapSystem _mapSystem = default!;
 
     public override void Initialize()
     {
         base.Initialize();
-        SubscribeLocalEvent<EntityStorageComponent, WeldableAttemptEvent>(OnWeldableAttempt);
-        SubscribeLocalEvent<EntityStorageComponent, WeldableChangedEvent>(OnWelded);
-        SubscribeLocalEvent<EntityStorageComponent, DestructionEventArgs>(OnDestroy);
+
+        SubscribeLocalEvent<EntityStorageComponent, MapInitEvent>(OnMapInit);
+
+        SubscribeLocalEvent<InsideEntityStorageComponent, InhaleLocationEvent>(OnInsideInhale);
+        SubscribeLocalEvent<InsideEntityStorageComponent, ExhaleLocationEvent>(OnInsideExhale);
+        SubscribeLocalEvent<InsideEntityStorageComponent, AtmosExposedGetAirEvent>(OnInsideExposed);
     }
 
-    private void OnWeldableAttempt(EntityUid uid, EntityStorageComponent component, WeldableAttemptEvent args)
+    private void OnMapInit(EntityUid uid, EntityStorageComponent component, MapInitEvent args)
     {
-        if (component.Open)
+        if (!component.Open && component.Air.TotalMoles == 0)
         {
-            args.Cancel();
-            return;
-        }
-
-        if (component.Contents.Contains(args.User))
-        {
-            var msg = Loc.GetString("entity-storage-component-already-contains-user-message");
-            _popupSystem.PopupEntity(msg, args.User, Filter.Entities(args.User));
-            args.Cancel();
+            // If we're closed on spawn and have no air already saved, we need to pull some air into our environment from where we spawned,
+            // so that we have -something-. For example, if you bought an animal crate or something.
+            TakeGas(uid, component);
         }
     }
 
-    private void OnWelded(EntityUid uid, EntityStorageComponent component, WeldableChangedEvent args)
+    protected override void OnComponentInit(EntityUid uid, EntityStorageComponent component, ComponentInit args)
     {
-        component.IsWeldedShut = args.IsWelded;
+        base.OnComponentInit(uid, component, args);
+
+        if (TryComp<ConstructionComponent>(uid, out var construction))
+            _construction.AddContainer(uid, ContainerName, construction);
     }
 
-    private void OnDestroy(EntityUid uid, EntityStorageComponent component, DestructionEventArgs args)
+    protected override void TakeGas(EntityUid uid, EntityStorageComponent component)
     {
-        component.Open = true;
-        EmptyContents(uid, component);
-    }
-
-    public void EmptyContents(EntityUid uid, EntityStorageComponent? component = null)
-    {
-        if (!Resolve(uid, ref component))
+        if (!component.Airtight)
             return;
 
-        var containedArr = component.Contents.ContainedEntities.ToArray();
-        foreach (var contained in containedArr)
+        var tile = GetOffsetTileRef(uid, component);
+
+        if (tile != null && _atmos.GetTileMixture(tile.Value.GridUid, null, tile.Value.GridIndices, true) is { } environment)
         {
-            if (component.Contents.Remove(contained))
-            {
-                Transform(contained).WorldPosition = component.ContentsDumpPosition();
-                if (TryComp(contained, out IPhysBody? physics))
-                {
-                    physics.CanCollide = true;
-                }
-            }
+            _atmos.Merge(component.Air, environment.RemoveVolume(component.Air.Volume));
         }
     }
+
+    public override void ReleaseGas(EntityUid uid, EntityStorageComponent component)
+    {
+        if (!component.Airtight)
+            return;
+
+        var tile = GetOffsetTileRef(uid, component);
+
+        if (tile != null && _atmos.GetTileMixture(tile.Value.GridUid, null, tile.Value.GridIndices, true) is { } environment)
+        {
+            _atmos.Merge(environment, component.Air);
+            component.Air.Clear();
+        }
+    }
+
+    private TileRef? GetOffsetTileRef(EntityUid uid, EntityStorageComponent component)
+    {
+        var targetCoordinates = TransformSystem.ToMapCoordinates(new EntityCoordinates(uid, component.EnteringOffset));
+
+        if (_map.TryFindGridAt(targetCoordinates, out var gridId, out var grid))
+        {
+            return _mapSystem.GetTileRef(gridId, grid, targetCoordinates);
+        }
+
+        return null;
+    }
+
+    #region Gas mix event handlers
+
+    private void OnInsideInhale(EntityUid uid, InsideEntityStorageComponent component, InhaleLocationEvent args)
+    {
+        if (TryComp<EntityStorageComponent>(component.Storage, out var storage) && storage.Airtight)
+        {
+            args.Gas = storage.Air;
+        }
+    }
+
+    private void OnInsideExhale(EntityUid uid, InsideEntityStorageComponent component, ExhaleLocationEvent args)
+    {
+        if (TryComp<EntityStorageComponent>(component.Storage, out var storage) && storage.Airtight)
+        {
+            args.Gas = storage.Air;
+        }
+    }
+
+    private void OnInsideExposed(EntityUid uid, InsideEntityStorageComponent component, ref AtmosExposedGetAirEvent args)
+    {
+        if (args.Handled)
+            return;
+
+        if (TryComp<EntityStorageComponent>(component.Storage, out var storage))
+        {
+            if (!storage.Airtight)
+                return;
+
+            args.Gas = storage.Air;
+        }
+
+        args.Handled = true;
+    }
+
+    #endregion
 }

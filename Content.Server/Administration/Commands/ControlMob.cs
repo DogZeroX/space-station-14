@@ -1,16 +1,13 @@
-using Content.Server.Mind.Components;
-using Content.Server.Players;
+using Content.Server.Mind;
 using Content.Shared.Administration;
-using Robust.Server.Player;
 using Robust.Shared.Console;
-using Robust.Shared.Utility;
 
 namespace Content.Server.Administration.Commands
 {
-    [AdminCommand(AdminFlags.Admin)]
-    sealed class ControlMob : IConsoleCommand
+    [AdminCommand(AdminFlags.Fun)]
+    public sealed partial class ControlMob : IConsoleCommand
     {
-        [Dependency] private readonly IEntityManager _entities = default!;
+        [Dependency] private IEntityManager _entities = default!;
 
         public string Command => "controlmob";
         public string Description => Loc.GetString("control-mob-command-description");
@@ -18,9 +15,9 @@ namespace Content.Server.Administration.Commands
 
         public void Execute(IConsoleShell shell, string argStr, string[] args)
         {
-            if (shell.Player is not IPlayerSession player)
+            if (shell.Player is not { } player)
             {
-                shell.WriteLine("shell-server-cannot");
+                shell.WriteError(Loc.GetString("shell-cannot-run-command-from-server"));
                 return;
             }
 
@@ -36,25 +33,23 @@ namespace Content.Server.Administration.Commands
                 return;
             }
 
-            var target = new EntityUid(targetId);
+            var targetNet = new NetEntity(targetId);
 
-            if (!target.IsValid() || !_entities.EntityExists(target))
+            if (!_entities.TryGetEntity(targetNet, out var target))
             {
                 shell.WriteLine(Loc.GetString("shell-invalid-entity-id"));
                 return;
             }
 
-            if (!_entities.HasComponent<MindComponent>(target))
-            {
-                shell.WriteLine(Loc.GetString("shell-entity-is-not-mob"));
-                return;
-            }
+            _entities.System<MindSystem>().ControlMob(player.UserId, target.Value);
+        }
 
-            var mind = player.ContentData()?.Mind;
+        public CompletionResult GetCompletion(IConsoleShell shell, string[] args)
+        {
+            if (args.Length != 1)
+                return CompletionResult.Empty;
 
-            DebugTools.AssertNotNull(mind);
-
-            mind!.TransferTo(target);
+            return CompletionResult.FromOptions(CompletionHelper.NetEntities(args[0], entManager: _entities));
         }
     }
 }

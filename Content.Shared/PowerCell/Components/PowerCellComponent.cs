@@ -1,36 +1,11 @@
+using Content.Shared.Power.Components;
 using Robust.Shared.GameStates;
-using Robust.Shared.Serialization;
 
-namespace Content.Shared.PowerCell;
+namespace Content.Shared.PowerCell.Components;
 
 /// <summary>
-///     This component enables power-cell related interactions (e.g., entity white-lists, cell sizes, examine, rigging).
-///     The actual power functionality is provided by the server-side BatteryComponent.
+/// This component enables power-cell related interactions (e.g. EntityWhitelists, cell sizes, examine, rigging).
+/// The actual power functionality is provided by the <see cref="BatteryComponent"/>.
 /// </summary>
-[NetworkedComponent]
-[RegisterComponent]
-public sealed class PowerCellComponent : Component
-{
-    public const string SolutionName = "powerCell";
-    public const int PowerCellVisualsLevels = 4;
-
-    [DataField("cellSize")]
-    public PowerCellSize CellSize = PowerCellSize.Small;
-
-    // Not networked to clients
-    [ViewVariables(VVAccess.ReadWrite)]
-    public bool IsRigged { get; set; }
-}
-
-public enum PowerCellSize
-{
-    Small = 0,
-    Medium = 1,
-    Large = 2
-}
-
-[Serializable, NetSerializable]
-public enum PowerCellVisuals
-{
-    ChargeLevel
-}
+[RegisterComponent, NetworkedComponent]
+public sealed partial class PowerCellComponent : Component;

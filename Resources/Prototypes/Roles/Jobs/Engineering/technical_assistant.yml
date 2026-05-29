@@ -1,13 +1,18 @@
 ﻿- type: job
   id: TechnicalAssistant
-  name: "technical assistant"
+  name: job-name-technical-assistant
+  description: job-description-technical-assistant
+  playTimeTracker: JobTechnicalAssistant
+  requirements:
+    - !type:OverallPlaytimeRequirement
+      time: 1h
+    - !type:DepartmentTimeRequirement
+      department: Engineering
+      time: 10h
+      inverted: true # stop playing intern if you're good at engineering!
   startingGear: TechnicalAssistantGear
-  departments:
-  - Civilian
-  - Engineering
-  icon: "TechnicalAssistant"
-  supervisors: "station engineers, atmospheric technicians, and the chief engineer"
-  canBeAntag: false
+  icon: "JobIconTechnicalAssistant"
+  supervisors: job-supervisors-engineering
   access:
   - Maintenance
   - Engineering
@@ -16,13 +21,22 @@
 - type: startingGear
   id: TechnicalAssistantGear
   equipment:
-    head: ClothingHeadHatWelding
-    jumpsuit: ClothingUniformJumpsuitColorYellow
-    back: ClothingBackpackEngineeringFilled
     shoes: ClothingShoesBootsWork
     id: TechnicalAssistantPDA
-    belt: ClothingBeltUtilityFilled
+    belt: ClothingBeltUtilityEngineering
     ears: ClothingHeadsetEngineering
-  innerclothingskirt: ClothingUniformJumpskirtColorYellow
-  satchel: ClothingBackpackSatchelEngineeringFilled
-  duffelbag: ClothingBackpackDuffelEngineeringFilled
+    pocket2: BookEngineersHandbook
+  #storage:
+    #back:
+    #- Stuff
+
+- type: chameleonOutfit
+  id: TechnicalAssistantChameleonOutfit
+  job: TechnicalAssistant
+  equipment:
+    head: ClothingHeadHatHardhatOrange
+    eyes: ClothingEyesGlassesMeson
+    mask: ClothingMaskBreath
+    neck: ClothingNeckScarfStripedOrange
+    outerClothing: ClothingOuterVestHazard
+    gloves: ClothingHandsGlovesColorYellow

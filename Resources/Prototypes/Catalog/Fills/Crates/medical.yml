@@ -1,87 +1,191 @@
 - type: entity
-  id: CrateMedicalDefib
-  name:  defibrillator crate
   parent: CrateMedical
-  components:
-  - type: StorageFill
-#    contents:
-#      - id: Defibrillator
-#        amount: 1
-
-- type: entity
   id: CrateMedicalSupplies
   name: medical supplies crate
-  parent: CrateMedical
+  description: Basic medical supplies.
   components:
-  - type: StorageFill
-    contents:
-      - id: MedkitFilled
-        amount: 2
-      - id: Gauze
-        amount: 2
-      - id: BoxLatex
-        amount: 1
-      - id: BoxSterile
-        amount: 1
-      - id: BoxMouthSwab
-        amount: 1
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage: !type:AllSelector
+        children:
+        - id: MedkitFilled
+          amount: 2
+        - id: Gauze
+          amount: 2
+        - id: Bloodpack
+          amount: 2
+        - id: BoxLatexGloves
+        - id: BoxSterileMask
+        - id: BoxMouthSwab
 
 - type: entity
+  parent: CrateMedical
   id: CrateChemistrySupplies
   name: chemistry supplies crate
-  parent: CrateMedical
+  description: Basic chemistry supplies.
   components:
-  - type: StorageFill
-    contents:
-      - id: BoxSyringe
-        amount: 1
-      - id: BoxBeaker
-        amount: 1
-      - id: BoxPillCanister
-        amount: 1
-      - id: Dropper
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage: !type:AllSelector
+        children:
+        - id: BoxSyringe
+        - id: BoxBeaker
+        - id: BoxPillCanister
+        - id: Dropper
+          amount: 2
+        - id: BoxBottle
+          amount: 2
+
+- type: entity
+  parent: CrateMedical
+  id: CrateChemistryVials
+  name: vial supply crate
+  description: Crate filled with a box of vials.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: BoxVial
+
+- type: entity
+  parent: CrateMedical
+  id: CrateMindShieldImplants
+  name: MindShield implant crate
+  description: Crate filled with 3 MindShield implants.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MindShieldImplanter
+        amount: 3
+
+- type: entity
+  parent: CrateSurgery
+  id: CrateMedicalSurgery
+  name: surgical supplies crate
+  description: Surgical instruments.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage: !type:AllSelector
+        children:
+        - id: Scalpel
+        - id: Retractor
+        - id: Cautery
+        - id: Drill
+        - id: Saw
+        - id: Hemostat
+        - id: ClothingMaskSterile
+
+- type: entity
+  parent: CrateMedical
+  id: CrateMedicalScrubs
+  name: medical scrubs crate
+  description: Medical clothings.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage: !type:AllSelector
+        children:
+        - id: UniformScrubsColorGreen
+        - id: UniformScrubsColorPurple
+        - id: UniformScrubsColorBlue
+        - id: ClothingHeadHatSurgcapBlue
+        - id: ClothingHeadHatSurgcapPurple
+        - id: ClothingHeadHatSurgcapGreen
+        - id: ClothingMaskSterile
+          amount: 3
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyBurnKit
+  name: emergency burn kit
+  description: Crate filled with a burn treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitBurnFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyToxinKit
+  name: emergency toxin kit
+  description: Crate filled with a toxin treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitToxinFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyO2Kit
+  name: emergency O2 kit
+  description: Crate filled with an O2 treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitOxygenFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyBruteKit
+  name: emergency brute kit
+  description: Crate filled with a brute treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitBruteFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyAdvancedKit
+  name: emergency advanced kit
+  description: Crate filled with an advanced treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitAdvancedFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateEmergencyRadiationKit
+  name: emergency radiation kit
+  description: Crate filled with a radiation treatment kit.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: MedkitRadiationFilled
+
+- type: entity
+  parent: CrateMedical
+  id: CrateBodyBags
+  name: body bags crate
+  description: Contains ten body bags.
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage:
+        id: BoxBodyBag
         amount: 2
 
 - type: entity
-  id: CrateMedicalSurgery
-  name: surgical supplies crate
-  parent: CrateSurgery
+  parent: CrateMedicalSecure
+  id: CrateVirologyBiosuit
+  name: virology bio suit crate
+  description: Contains 2 biohazard suits to ensure that no disease will distract you from treating the crew. Requires Medical access to open.
   components:
-  - type: StorageFill
-    contents:
-      - id: Scalpel
-        amount: 1
-      - id: Retractor
-        amount: 1
-      - id: Cautery
-        amount: 1
-      - id: Drill
-        amount: 1
-      - id: Saw
-        amount: 1
-      - id: Hemostat
-        amount: 1
-      - id: ClothingMaskSterile
-        amount: 1
-
-- type: entity
-  id: CrateMedicalScrubs
-  name: medical scrubs crate
-  parent: CrateMedical
-  components:
-  - type: StorageFill
-    contents:
-      - id: UniformScrubsColorGreen
-        amount: 1
-      - id: UniformScrubsColorPurple
-        amount: 1
-      - id: UniformScrubsColorBlue
-        amount: 1
-      - id: HatBandBlue
-        amount: 1
-      - id: HatBandRed
-        amount: 1
-      - id: HatBandGreen
-        amount: 1
-      - id: ClothingMaskSterile
-        amount: 3
+  - type: EntityTableContainerFill
+    containers:
+      entity_storage: !type:AllSelector
+        children:
+        - !type:NestedSelector
+          tableId: FillBiohazardGearVirology
+          rolls: 2
+        - id: ClothingMaskSterile
+          amount: 2

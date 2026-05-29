@@ -1,66 +1,121 @@
-using JetBrains.Annotations;
+using Content.Server.Atmos.EntitySystems;
+using Content.Server.Chat.Managers;
+using Content.Shared.GameTicking.Components;
+using Robust.Server.GameObjects;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Random;
+using Robust.Shared.Timing;
 
 namespace Content.Server.GameTicking.Rules;
 
-[PublicAPI]
-public abstract class GameRuleSystem : EntitySystem
+public abstract partial class GameRuleSystem<T> : EntitySystem where T : IComponent
 {
+    [Dependency] protected IGameTiming Timing = default!;
+    [Dependency] protected IPrototypeManager Proto = default!;
+    [Dependency] protected IRobustRandom RobustRandom = default!;
     [Dependency] protected GameTicker GameTicker = default!;
 
-    /// <summary>
-    ///     Whether this GameRule is currently enabled or not.
-    ///     Be sure to check this before doing anything rule-specific.
-    /// </summary>
-    public bool Enabled { get; protected set; } = false;
+    // Not protected, just to be used in utility methods
+    [Dependency] private AtmosphereSystem _atmosphere = default!;
+    [Dependency] private MapSystem _map = default!;
 
-    /// <summary>
-    ///     When the GameRule prototype with this ID is added, this system will be enabled.
-    ///     When it gets removed, this system will be disabled.
-    /// </summary>
-    public new abstract string Prototype { get; }
+    [Dependency] protected EntityQuery<GameRuleComponent> GameRuleQuery = default!;
+    [Dependency] protected EntityQuery<T> RuleQuery = default!;
 
     public override void Initialize()
     {
         base.Initialize();
 
-        SubscribeLocalEvent<GameRuleAddedEvent>(OnGameRuleAdded);
-
-        SubscribeLocalEvent<GameRuleStartedEvent>(OnGameRuleStarted);
-        SubscribeLocalEvent<GameRuleEndedEvent>(OnGameRuleEnded);
+        SubscribeLocalEvent<T, GameRuleAddedEvent>(OnGameRuleAdded);
+        SubscribeLocalEvent<T, GameRuleStartedEvent>(OnGameRuleStarted);
+        SubscribeLocalEvent<T, GameRuleEndedEvent>(OnGameRuleEnded);
+        SubscribeLocalEvent<RoundEndTextAppendEvent>(OnRoundEndTextAppend);
     }
 
-    private void OnGameRuleAdded(GameRuleAddedEvent ev)
+    private void OnGameRuleAdded(EntityUid uid, T component, ref GameRuleAddedEvent args)
     {
-        if (ev.Rule.ID != Prototype)
+        if (!GameRuleQuery.TryComp(uid, out var ruleData))
             return;
 
-        Enabled = true;
+        Added(uid, component, ruleData, args);
     }
 
-    private void OnGameRuleStarted(GameRuleStartedEvent ev)
+    private void OnGameRuleStarted(EntityUid uid, T component, ref GameRuleStartedEvent args)
     {
-        if (ev.Rule.ID != Prototype)
+        if (!GameRuleQuery.TryComp(uid, out var ruleData))
             return;
 
-        Started();
+        Started(uid, component, ruleData, args);
     }
 
-    private void OnGameRuleEnded(GameRuleEndedEvent ev)
+    private void OnGameRuleEnded(EntityUid uid, T component, ref GameRuleEndedEvent args)
     {
-        if (ev.Rule.ID != Prototype)
+        if (!GameRuleQuery.TryComp(uid, out var ruleData))
             return;
 
-        Enabled = false;
-        Ended();
+        Ended(uid, component, ruleData, args);
+    }
+
+    private void OnRoundEndTextAppend(RoundEndTextAppendEvent ev)
+    {
+        var query = QueryAllRules();
+        while (query.MoveNext(out var uid, out var comp, out var ruleData))
+        {
+            AppendRoundEndText(uid, comp, ruleData, ref ev);
+        }
     }
 
     /// <summary>
-    ///     Called when the game rule has been started..
+    /// Called when the gamerule is added
     /// </summary>
-    public abstract void Started();
+    protected virtual void Added(EntityUid uid, T component, GameRuleComponent gameRule, GameRuleAddedEvent args)
+    {
+
+    }
 
     /// <summary>
-    ///     Called when the game rule has ended..
+    /// Called when the gamerule begins
     /// </summary>
-    public abstract void Ended();
+    protected virtual void Started(EntityUid uid, T component, GameRuleComponent gameRule, GameRuleStartedEvent args)
+    {
+
+    }
+
+    /// <summary>
+    /// Called when the gamerule ends
+    /// </summary>
+    protected virtual void Ended(EntityUid uid, T component, GameRuleComponent gameRule, GameRuleEndedEvent args)
+    {
+
+    }
+
+    /// <summary>
+    /// Called at the end of a round when text needs to be added for a game rule.
+    /// </summary>
+    protected virtual void AppendRoundEndText(EntityUid uid, T component, GameRuleComponent gameRule, ref RoundEndTextAppendEvent args)
+    {
+
+    }
+
+    /// <summary>
+    /// Called on an active gamerule entity in the Update function
+    /// </summary>
+    protected virtual void ActiveTick(EntityUid uid, T component, GameRuleComponent gameRule, float frameTime)
+    {
+
+    }
+
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+
+        var query = EntityQueryEnumerator<T, GameRuleComponent>();
+        while (query.MoveNext(out var uid, out var comp1, out var comp2))
+        {
+            if (!GameTicker.IsGameRuleActive(uid, comp2))
+                continue;
+
+            ActiveTick(uid, comp1, comp2, frameTime);
+        }
+    }
 }

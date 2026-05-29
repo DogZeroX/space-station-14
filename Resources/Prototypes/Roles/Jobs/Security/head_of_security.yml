@@ -1,15 +1,25 @@
 - type: job
   id: HeadOfSecurity
-  name: "head of security"
+  name: job-name-hos
+  description: job-description-hos
+  playTimeTracker: JobHeadOfSecurity
+  requirements:
+    - !type:RoleTimeRequirement
+      role: JobWarden
+      time: 3h
+    - !type:RoleTimeRequirement
+      role: JobDetective
+      time: 1h # knowing how to use the tools is important
+    - !type:RoleTimeRequirement
+      role: JobSecurityOfficer
+      time: 5h
+    - !type:DepartmentTimeRequirement
+      department: Security
+      time: 10h
   weight: 10
   startingGear: HoSGear
-  departments:
-  - Command
-  - Security
-  icon: "HeadOfSecurity"
-  requireAdminNotify: true
-  supervisors: "the captain"
-  canBeAntag: false
+  icon: "JobIconHeadOfSecurity"
+  supervisors: job-supervisors-captain
   access:
   - HeadOfSecurity
   - Command
@@ -17,20 +27,35 @@
   - Security
   - Armory
   - Maintenance
-  - Service
+  - External
+  - Detective
+  - Cryogenics
+  - GenpopEnter
+  - GenpopLeave
+  special:
+  - !type:AddImplantSpecial
+    implants: [ MindShieldImplant ]
+  - !type:AddComponentSpecial
+    components:
+      - type: CommandStaff
 
 - type: startingGear
   id: HoSGear
   equipment:
-    jumpsuit: ClothingUniformJumpsuitHoS
-    back: ClothingBackpackSecurityFilled
-    shoes: ClothingShoesBootsJack
-    outerClothing: ClothingOuterCoatHoSTrench
     eyes: ClothingEyesGlassesSecurity
-    head: ClothingHeadHatBeretHoS
     id: HoSPDA
+    gloves: ClothingHandsGlovesCombat
     ears: ClothingHeadsetAltSecurity
-    belt: ClothingBeltSecurityFilled
-  innerclothingskirt: ClothingUniformJumpskirtHoS
-  satchel: ClothingBackpackSatchelSecurityFilled
-  duffelbag: ClothingBackpackDuffelSecurityFilled
+    pocket1: WeaponPistolMk58
+  storage:
+    back:
+    - Flash
+    - MagazinePistol
+
+- type: chameleonOutfit
+  id: HeadOfSecurityChameleonOutfit
+  job: HeadOfSecurity
+  hasMindShield: true
+  equipment:
+    mask: ClothingMaskGasSecurity
+    neck: ClothingNeckCloakHos

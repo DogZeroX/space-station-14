@@ -1,4 +1,3 @@
-using Content.Client.Tools.Components;
 using Content.Shared.Tools.Components;
 using Robust.Client.GameObjects;
 
@@ -11,10 +10,10 @@ public sealed class WeldableVisualizerSystem : VisualizerSystem<WeldableComponen
         if (args.Sprite == null)
             return;
 
-        args.Component.TryGetData(WeldableVisuals.IsWelded, out bool isWelded);
-        if (args.Sprite.LayerMapTryGet(WeldableLayers.BaseWelded, out var layer))
+        AppearanceSystem.TryGetData<bool>(uid, WeldableVisuals.IsWelded, out var isWelded, args.Component);
+        if (SpriteSystem.LayerMapTryGet((uid, args.Sprite), WeldableLayers.BaseWelded, out var layer, false))
         {
-            args.Sprite.LayerSetVisible(layer, isWelded);
+            SpriteSystem.LayerSetVisible((uid, args.Sprite), layer, isWelded);
         }
     }
 }

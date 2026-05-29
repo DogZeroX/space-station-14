@@ -1,4 +1,5 @@
 ﻿using Content.Server.Power.Pow3r;
+using Content.Shared.Guidebook;
 
 namespace Content.Server.Power.Components
 {
@@ -10,7 +11,7 @@ namespace Content.Server.Power.Components
     ///     and battery storage should be handed off to components like <see cref="BatteryComponent"/>.
     /// </remarks>
     [RegisterComponent]
-    public sealed class PowerNetworkBatteryComponent : Component
+    public sealed partial class PowerNetworkBatteryComponent : Component
     {
         [ViewVariables] public float LastSupply = 0f;
 
@@ -24,6 +25,7 @@ namespace Content.Server.Power.Components
 
         [DataField("maxSupply")]
         [ViewVariables(VVAccess.ReadWrite)]
+        [GuidebookData]
         public float MaxSupply
         {
             get => NetworkBattery.MaxSupply;
@@ -94,7 +96,7 @@ namespace Content.Server.Power.Components
             set => NetworkBattery.CanCharge = value;
         }
 
-        [DataField("canDisharge")]
+        [DataField("canDischarge")]
         [ViewVariables(VVAccess.ReadWrite)]
         public bool CanDischarge
         {

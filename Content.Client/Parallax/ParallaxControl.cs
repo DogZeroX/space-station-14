@@ -1,9 +1,11 @@
-﻿using Content.Client.Parallax.Managers;
+﻿using System.Numerics;
+using Content.Client.Parallax.Data;
+using Content.Client.Parallax.Managers;
 using Robust.Client.Graphics;
 using Robust.Client.UserInterface;
-using Robust.Shared.IoC;
-using Robust.Shared.Maths;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Random;
+using Robust.Shared.Timing;
 using Robust.Shared.ViewVariables;
 
 namespace Content.Client.Parallax;
@@ -11,33 +13,61 @@ namespace Content.Client.Parallax;
 /// <summary>
 ///     Renders the parallax background as a UI control.
 /// </summary>
-public sealed class ParallaxControl : Control
+public sealed partial class ParallaxControl : Control
 {
-    [Dependency] private readonly IParallaxManager _parallaxManager = default!;
-    [Dependency] private readonly IRobustRandom _random = default!;
+    [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private IParallaxManager _parallaxManager = default!;
+    [Dependency] private IRobustRandom _random = default!;
 
-    [ViewVariables(VVAccess.ReadWrite)] public Vector2i Offset { get; set; }
+    private string _parallaxPrototype = "FastSpace";
+
+    [ViewVariables(VVAccess.ReadWrite)] public Vector2 Offset { get; set; }
+    [ViewVariables(VVAccess.ReadWrite)] public float SpeedX { get; set; } = 0.0f;
+    [ViewVariables(VVAccess.ReadWrite)] public float SpeedY { get; set; } = 0.0f;
+    [ViewVariables(VVAccess.ReadWrite)] public float ScaleX { get; set; } = 1.0f;
+    [ViewVariables(VVAccess.ReadWrite)] public float ScaleY { get; set; } = 1.0f;
+    [ViewVariables(VVAccess.ReadWrite)] public string ParallaxPrototype
+    {
+        get => _parallaxPrototype;
+        set
+        {
+            _parallaxPrototype = value;
+            _parallaxManager.LoadParallaxByName(value);
+        }
+    }
 
     public ParallaxControl()
     {
         IoCManager.InjectDependencies(this);
 
-        Offset = (_random.Next(0, 1000), _random.Next(0, 1000));
+        Offset = new Vector2(_random.Next(0, 1000), _random.Next(0, 1000));
+
         RectClipContent = true;
+        _parallaxManager.LoadParallaxByName(_parallaxPrototype);
     }
 
     protected override void Draw(DrawingHandleScreen handle)
     {
-        foreach (var layer in _parallaxManager.ParallaxLayers)
+        var currentTime = (float) _timing.RealTime.TotalSeconds;
+        var offset = Offset + new Vector2(currentTime * SpeedX, currentTime * SpeedY);
+
+        foreach (var layer in _parallaxManager.GetParallaxLayers(_parallaxPrototype))
         {
             var tex = layer.Texture;
-            var texSize = tex.Size * layer.Config.Scale.Floored();
+            var texSize = new Vector2i(
+                (int)(tex.Size.X * Size.X * layer.Config.Scale.X / 1920 * ScaleX),
+                (int)(tex.Size.Y * Size.X * layer.Config.Scale.Y / 1920 * ScaleY)
+            );
             var ourSize = PixelSize;
+
+            //Protection from division by zero.
+            texSize.X = Math.Max(texSize.X, 1);
+            texSize.Y = Math.Max(texSize.Y, 1);
 
             if (layer.Config.Tiled)
             {
                 // Multiply offset by slowness to match normal parallax
-                var scaledOffset = (Offset * layer.Config.Slowness).Floored();
+                var scaledOffset = (offset * layer.Config.Slowness).Floored();
 
                 // Then modulo the scaled offset by the size to prevent drawing a bunch of offscreen tiles for really small images.
                 scaledOffset.X %= texSize.X;
@@ -50,7 +80,7 @@ public sealed class ParallaxControl : Control
                 {
                     for (var y = -scaledOffset.Y; y < ourSize.Y; y += texSize.Y)
                     {
-                        handle.DrawTextureRect(tex, UIBox2.FromDimensions((x, y), texSize));
+                        handle.DrawTextureRect(tex, UIBox2.FromDimensions(new Vector2(x, y), texSize));
                     }
                 }
             }

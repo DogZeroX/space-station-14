@@ -2,6 +2,7 @@ using Content.Server.Solar.Components;
 using Content.Server.UserInterface;
 using Content.Shared.Solar;
 using JetBrains.Annotations;
+using Robust.Server.GameObjects;
 
 namespace Content.Server.Solar.EntitySystems
 {
@@ -9,9 +10,10 @@ namespace Content.Server.Solar.EntitySystems
     /// Responsible for updating solar control consoles.
     /// </summary>
     [UsedImplicitly]
-    internal sealed class PowerSolarControlConsoleSystem : EntitySystem
+    internal sealed partial class PowerSolarControlConsoleSystem : EntitySystem
     {
         [Dependency] private PowerSolarSystem _powerSolarSystem = default!;
+        [Dependency] private UserInterfaceSystem _uiSystem = default!;
 
         /// <summary>
         /// Timer used to avoid updating the UI state every frame (which would be overkill)
@@ -32,13 +34,14 @@ namespace Content.Server.Solar.EntitySystems
             {
                 _updateTimer -= 1;
                 var state = new SolarControlConsoleBoundInterfaceState(_powerSolarSystem.TargetPanelRotation, _powerSolarSystem.TargetPanelVelocity, _powerSolarSystem.TotalPanelPower, _powerSolarSystem.TowardsSun);
-                foreach (var component in EntityManager.EntityQuery<SolarControlConsoleComponent>())
+                var query = EntityQueryEnumerator<SolarControlConsoleComponent, UserInterfaceComponent>();
+                while (query.MoveNext(out var uid, out _, out var uiComp))
                 {
-                    component.Owner.GetUIOrNull(SolarControlConsoleUiKey.Key)?.SetState(state);
+                    _uiSystem.SetUiState((uid, uiComp), SolarControlConsoleUiKey.Key, state);
                 }
             }
         }
- 
+
         private void OnUIMessage(EntityUid uid, SolarControlConsoleComponent component, SolarControlConsoleAdjustMessage msg)
         {
             if (double.IsFinite(msg.Rotation))

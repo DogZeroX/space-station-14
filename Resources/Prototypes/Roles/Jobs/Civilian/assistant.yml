@@ -1,22 +1,30 @@
 - type: job
   id: Passenger
-  name: "passenger"
+  name: job-name-passenger
+  description: job-description-passenger
+  playTimeTracker: JobPassenger
   startingGear: PassengerGear
-  departments:
-  - Civilian
-  icon: "Passenger"
-  supervisors: "absolutely everyone"
+  icon: "JobIconPassenger"
+  supervisors: job-supervisors-everyone
   access:
   - Maintenance
 
 - type: startingGear
   id: PassengerGear
   equipment:
-    jumpsuit: ClothingUniformJumpsuitColorGrey
-    back: ClothingBackpackFilled
-    shoes: ClothingShoesColorBlack
     id: PassengerPDA
-    ears: ClothingHeadsetService
-  innerclothingskirt: ClothingUniformJumpskirtColorGrey
-  satchel: ClothingBackpackSatchelFilled
-  duffelbag: ClothingBackpackDuffelFilled
+    ears: ClothingHeadsetGrey
+  #storage:
+    #back:
+    #- Stuff
+
+- type: chameleonOutfit
+  id: PassengerChameleonOutfit
+  job: Passenger
+  equipment:
+    head: ClothingHeadHatWelding
+    eyes: ClothingEyesGlassesCheapSunglasses
+    mask: ClothingMaskGas
+    neck: ClothingNeckMantle
+    outerClothing: ClothingOuterWinterCoat
+    gloves: ClothingHandsGlovesColorYellowBudget

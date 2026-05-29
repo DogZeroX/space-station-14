@@ -5,11 +5,11 @@
   components:
   - type: Appearance
   - type: Sprite
-    netsync: false
   - type: Tag
     tags:
     - Payload
   - type: Damageable
+  - type: Injurable
     damageContainer: Inorganic
   - type: Destructible
     thresholds:
@@ -22,7 +22,7 @@
 
 - type: entity
   name: explosive payload
-  parent: BasePayload
+  parent: [ BasePayload, BaseSecurityContraband ]
   id: ExplosivePayload
   components:
   - type: Sprite
@@ -34,16 +34,9 @@
     maxIntensity: 10
     intensitySlope: 3
     totalIntensity: 120 # about a ~4 tile radius
-    flashRange: 7
   - type: ExplodeOnTrigger
   - type: Destructible
     thresholds:
-    - trigger:
-        !type:DamageTypeTrigger
-        damageType: Heat
-        damage: 25
-      behaviors:
-      - !type:ExplodeBehavior
     - trigger:
         !type:DamageTrigger
         damage: 50
@@ -53,13 +46,16 @@
 
 - type: entity
   name: chemical payload
-  parent: BasePayload
+  parent: [ BasePayload, BaseMedicalScienceContraband ]
   id: ChemicalPayload
   description: A chemical payload. Has space to store two beakers. In combination with a trigger and a case, this can be used to initiate chemical reactions.
   components:
   - type: Sprite
     sprite: Objects/Devices/payload.rsi
     state: payload-empty
+    layers:
+    - state: payload-empty
+      map: ["base"]
   - type: ChemicalPayload
     beakerSlotA: &slotDef
       whitelist:
@@ -68,18 +64,25 @@
       swap: false
     beakerSlotB: *slotDef
   - type: Appearance
+  - type: GenericVisualizer
     visuals:
-    - type: GenericEnumVisualizer
-      key: enum.ChemicalPayloadVisuals.Slots
-      states:
-        enum.ChemicalPayloadFilledSlots.None: payload-empty
-        enum.ChemicalPayloadFilledSlots.Left: payload-chemical-left
-        enum.ChemicalPayloadFilledSlots.Right: payload-chemical-right
-        enum.ChemicalPayloadFilledSlots.Both: payload-chemical-armed
+      enum.ChemicalPayloadVisuals.Slots:
+        base:
+          None: { state: payload-empty }
+          Left: { state: payload-chemical-left }
+          Right: { state: payload-chemical-right }
+          Both: { state: payload-chemical-armed }
+  - type: ItemSlots
+  - type: ContainerContainer
+    containers:
+      BeakerSlotA: !type:ContainerSlot
+      BeakerSlotB: !type:ContainerSlot
+  - type: StaticPrice
+    price: 60
 
 - type: entity
   name: flash payload
-  parent: BasePayload
+  parent: [ BasePayload, BaseSecurityScienceCommandContraband ]
   id: FlashPayload
   description: A single-use flash payload.
   components:
@@ -92,3 +95,4 @@
     - type: EmitSoundOnTrigger
       sound:
         path: "/Audio/Effects/flash_bang.ogg"
+      positional: true

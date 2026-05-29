@@ -18,26 +18,23 @@ namespace Content.Client.Atmos.UI
     {
         private readonly ButtonGroup _buttonGroup = new();
 
-        public bool FilterStatus = true;
         public string? SelectedGas;
         public string? CurrentGasId;
 
-        public event Action? ToggleStatusButtonPressed;
+        public event Action<bool>? ToggleStatusButtonPressed;
         public event Action<string>? FilterTransferRateChanged;
         public event Action? SelectGasPressed;
 
-        public GasFilterWindow(IEnumerable<GasPrototype> gases)
+        public GasFilterWindow()
         {
             RobustXamlLoader.Load(this);
-            PopulateGasList(gases);
 
-            ToggleStatusButton.OnPressed += _ => SetFilterStatus(!FilterStatus);
-            ToggleStatusButton.OnPressed += _ => ToggleStatusButtonPressed?.Invoke();
+            ToggleStatusButton.OnToggled += _ => ToggleStatusButtonPressed?.Invoke(ToggleStatusButton.Pressed);
 
             FilterTransferRateInput.OnTextChanged += _ => SetFilterRate.Disabled = false;
             SetFilterRate.OnPressed += _ =>
             {
-                FilterTransferRateChanged?.Invoke(FilterTransferRateInput.Text ??= "");
+                FilterTransferRateChanged?.Invoke(FilterTransferRateInput.Text);
                 SetFilterRate.Disabled = true;
             };
 
@@ -49,20 +46,12 @@ namespace Content.Client.Atmos.UI
 
         public void SetTransferRate(float rate)
         {
-            FilterTransferRateInput.Text = rate.ToString(CultureInfo.InvariantCulture);
+            FilterTransferRateInput.Text = rate.ToString(CultureInfo.CurrentCulture);
         }
 
         public void SetFilterStatus(bool enabled)
         {
-            FilterStatus = enabled;
-            if (enabled)
-            {
-                ToggleStatusButton.Text = Loc.GetString("comp-gas-filter-ui-status-enabled");
-            }
-            else
-            {
-                ToggleStatusButton.Text = Loc.GetString("comp-gas-filter-ui-status-disabled");
-            }
+            ToggleStatusButton.Pressed = enabled;
         }
 
         public void SetGasFiltered(string? id, string name)
@@ -73,11 +62,18 @@ namespace Content.Client.Atmos.UI
             SelectGasButton.Disabled = true;
         }
 
-        private void PopulateGasList(IEnumerable<GasPrototype> gases)
+        public void PopulateGasList(IEnumerable<GasPrototype> gases)
         {
-            foreach (GasPrototype gas in gases)
+            GasList.Add(new ItemList.Item(GasList)
             {
-                GasList.Add(GetGasItem(gas.ID, gas.Name, GasList));
+                Metadata = null,
+                Text = Loc.GetString("comp-gas-filter-ui-filter-gas-none")
+            });
+
+            foreach (var gas in gases)
+            {
+                var gasName = Loc.GetString(gas.Name);
+                GasList.Add(GetGasItem(gas.ID, gasName, GasList));
             }
         }
 

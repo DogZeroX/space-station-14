@@ -1,143 +1,50 @@
-using Content.Server.Morgue.Components;
 using Content.Shared.Morgue;
-using Content.Shared.Examine;
-using Content.Shared.Database;
-using Content.Shared.Verbs;
-using JetBrains.Annotations;
-using Content.Shared.Interaction.Events;
-using Robust.Server.GameObjects;
-using Content.Server.Players;
-using Content.Server.GameTicking;
-using Content.Server.Popups;
-using Content.Shared.Standing;
-using Robust.Shared.Player;
+using Content.Shared.Morgue.Components;
+using Content.Shared.Storage.Components;
+using Robust.Shared.Audio.Systems;
+using Robust.Shared.Timing;
 
-namespace Content.Server.Morgue
+namespace Content.Server.Morgue;
+
+public sealed partial class MorgueSystem : SharedMorgueSystem
 {
-    [UsedImplicitly]
-    public sealed class MorgueSystem : EntitySystem
+    [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    [Dependency] private SharedAudioSystem _audio = default!;
+
+    public override void Initialize()
     {
-        [Dependency] private readonly GameTicker _ticker = default!;
-        [Dependency] private readonly PopupSystem _popup = default!;
-        [Dependency] private readonly StandingStateSystem _stando = default!;
+        base.Initialize();
 
-        private float _accumulatedFrameTime;
+        SubscribeLocalEvent<MorgueComponent, MapInitEvent>(OnMapInit);
+    }
 
-        public override void Initialize()
+    private void OnMapInit(Entity<MorgueComponent> ent, ref MapInitEvent args)
+    {
+        ent.Comp.NextBeep = _timing.CurTime + ent.Comp.NextBeep;
+    }
+
+    /// <summary>
+    /// Handles the periodic beeping that morgues do when a live body is inside.
+    /// </summary>
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+
+        var curTime = _timing.CurTime;
+        var query = EntityQueryEnumerator<MorgueComponent, EntityStorageComponent, AppearanceComponent>();
+        while (query.MoveNext(out var uid, out var comp, out var storage, out var appearance))
         {
-            base.Initialize();
+            if (curTime < comp.NextBeep)
+                continue;
 
-            SubscribeLocalEvent<CrematoriumEntityStorageComponent, GetVerbsEvent<AlternativeVerb>>(AddCremateVerb);
-            SubscribeLocalEvent<CrematoriumEntityStorageComponent, ExaminedEvent>(OnCrematoriumExamined);
-            SubscribeLocalEvent<CrematoriumEntityStorageComponent, SuicideEvent>(OnSuicide);
-            SubscribeLocalEvent<MorgueEntityStorageComponent, ExaminedEvent>(OnMorgueExamined);
-        }
+            comp.NextBeep += comp.BeepTime;
 
-        private void OnSuicide(EntityUid uid, CrematoriumEntityStorageComponent component, SuicideEvent args)
-        {
-            if (args.Handled) return;
-            args.SetHandled(SuicideKind.Heat);
-            var victim = args.Victim;
-            if (TryComp(victim, out ActorComponent? actor) && actor.PlayerSession.ContentData()?.Mind is { } mind)
+            CheckContents(uid, comp, storage);
+
+            if (comp.DoSoulBeep && _appearance.TryGetData<MorgueContents>(uid, MorgueVisuals.Contents, out var contents, appearance) && contents == MorgueContents.HasSoul)
             {
-                _ticker.OnGhostAttempt(mind, false);
-
-                if (mind.OwnedEntity is { Valid: true } entity)
-                {
-                    _popup.PopupEntity(Loc.GetString("crematorium-entity-storage-component-suicide-message"), entity, Filter.Pvs(entity, entityManager: EntityManager));
-                }
-            }
-
-            _popup.PopupEntity(
-                Loc.GetString("crematorium-entity-storage-component-suicide-message-others", ("victim", victim)),
-                victim,
-                Filter.Pvs(victim, entityManager: EntityManager).RemoveWhereAttachedEntity(e => e == victim));
-
-            if (component.CanInsert(victim))
-            {
-                component.Insert(victim);
-                _stando.Down(victim, false);
-            }
-            else
-            {
-
-                EntityManager.DeleteEntity(victim);
-            }
-
-            component.Cremate();
-        }
-
-        private void AddCremateVerb(EntityUid uid, CrematoriumEntityStorageComponent component, GetVerbsEvent<AlternativeVerb> args)
-        {
-            if (!args.CanAccess || !args.CanInteract || component.Cooking || component.Open)
-                return;
-
-            AlternativeVerb verb = new();
-            verb.Text = Loc.GetString("cremate-verb-get-data-text");
-            // TODO VERB ICON add flame/burn symbol?
-            verb.Act = () => component.TryCremate();
-            verb.Impact = LogImpact.Medium; // could be a body? or evidence? I dunno.
-            args.Verbs.Add(verb);
-        }
-
-        private void OnCrematoriumExamined(EntityUid uid, CrematoriumEntityStorageComponent component, ExaminedEvent args)
-        {
-            if (!TryComp<AppearanceComponent>(uid, out var appearance))
-                return;
-
-            if (args.IsInDetailsRange)
-            {
-                if (appearance.TryGetData(CrematoriumVisuals.Burning, out bool isBurning) && isBurning)
-                {
-                    args.PushMarkup(Loc.GetString("crematorium-entity-storage-component-on-examine-details-is-burning", ("owner", uid)));
-                }
-
-                if (appearance.TryGetData(MorgueVisuals.HasContents, out bool hasContents) && hasContents)
-                {
-                    args.PushMarkup(Loc.GetString("crematorium-entity-storage-component-on-examine-details-has-contents"));
-                }
-                else
-                {
-                    args.PushMarkup(Loc.GetString("crematorium-entity-storage-component-on-examine-details-empty"));
-                }
-            }
-        }
-
-        private void OnMorgueExamined(EntityUid uid, MorgueEntityStorageComponent component, ExaminedEvent args)
-        {
-            if (!TryComp<AppearanceComponent>(uid, out var appearance)) return;
-
-            if (args.IsInDetailsRange)
-            {
-                if (appearance.TryGetData(MorgueVisuals.HasSoul, out bool hasSoul) && hasSoul)
-                {
-                    args.PushMarkup(Loc.GetString("morgue-entity-storage-component-on-examine-details-body-has-soul"));
-                }
-                else if (appearance.TryGetData(MorgueVisuals.HasMob, out bool hasMob) && hasMob)
-                {
-                    args.PushMarkup(Loc.GetString("morgue-entity-storage-component-on-examine-details-body-has-no-soul"));
-                }
-                else if (appearance.TryGetData(MorgueVisuals.HasContents, out bool hasContents) && hasContents)
-                {
-                    args.PushMarkup(Loc.GetString("morgue-entity-storage-component-on-examine-details-has-contents"));
-                }
-                else
-                {
-                    args.PushMarkup(Loc.GetString("morgue-entity-storage-component-on-examine-details-empty"));
-                }
-            }
-        }
-        public override void Update(float frameTime)
-        {
-            _accumulatedFrameTime += frameTime;
-
-            if (_accumulatedFrameTime >= 10)
-            {
-                foreach (var morgue in EntityManager.EntityQuery<MorgueEntityStorageComponent>())
-                {
-                    morgue.Update();
-                }
-                _accumulatedFrameTime -= 10;
+                _audio.PlayPvs(comp.OccupantHasSoulAlarmSound, uid);
             }
         }
     }

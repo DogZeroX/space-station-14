@@ -1,55 +1,55 @@
-- type: entity
-  abstract: true
-  parent: BaseItem
-  id: Crayon
-  name: crayon
-  description: "A colourful crayon. Looks tasty. Mmmm..."
-  components:
-  - type: Tag
-    tags:
-    - Write
-    - Crayon
-    - Trash
-  - type: Recyclable
-  - type: SpaceGarbage
-  - type: UserInterface
-    interfaces:
-    - key: enum.CrayonUiKey.Key
-      type: CrayonBoundUserInterface
-  - type: Crayon
-    capacity: 5
-  - type: Food
-  - type: SolutionContainerManager
-    solutions:
-      food:
-        reagents:
-        - ReagentId: Nutriment
-          Quantity: 3
-        - ReagentId: MindbreakerToxin
-          Quantity: 2
+# When adding new crayons, also add it to id: AllCrayonsTable
 
 - type: entity
-  parent: Crayon
-  id: CrayonWhite
-  name: white crayon
+  abstract: true
+  parent: [SolutionFood, SolutionVeryTiny, BaseItem] # Crayons are less pourous than most foods, so we just assume they have less capacity.
+  id: CrayonInedible
+  name: crayon
+  description: A colourful crayon. A forbidden flavor.
   components:
   - type: Sprite
     sprite: Objects/Fun/crayons.rsi
-    state: white
   - type: Item
     sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: white
-  - type: Crayon
-    color: white
-    capacity: 5
+    size: Tiny
   - type: Tag
     tags:
     - Write
     - Crayon
-    - CrayonWhite
-    - Recyclable
     - Trash
+    - Recyclable
+  - type: SpaceGarbage
+  - type: UserInterface
+    interfaces:
+      enum.CrayonUiKey.Key:
+        type: CrayonBoundUserInterface
+  - type: Crayon
+    selectedState: like
+  - type: LimitedCharges
+    maxCharges: 25
+  - type: StaticPrice
+    price: 5
+
+- type: entity
+  abstract: true
+  parent: CrayonInedible
+  id: Crayon
+  description: A colourful crayon. Looks tasty. Mmmm...
+  components:
+  - type: Edible
+  - type: FlavorProfile
+    flavors:
+    - chewy
+    - bitter
+  - type: Solution
+    solution:
+      reagents:
+      - ReagentId: Nutriment
+        Quantity: 5
+      - ReagentId: MindbreakerToxin
+        Quantity: 10
+
+# special crayons
 
 - type: entity
   parent: Crayon
@@ -57,15 +57,11 @@
   name: mime crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: mime
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: mime
+    heldPrefix: mime
   - type: Crayon
     color: white
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -80,20 +76,61 @@
   name: rainbow crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: rainbow
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: rainbow
+    heldPrefix: rainbow
   - type: Crayon
     color: Red
     selectableColor: true
-    capacity: 30
+  - type: LimitedCharges
+    maxCharges: 30
+
+- type: entity
+  parent: CrayonRainbow
+  id: CrayonInfinite # should not be player available to prevent decal spam
+  categories: [ DoNotMap ]
+  name: infinite crayon
+  components:
+  - type: Crayon
+    deleteEmpty: false
+  - type: AutoRecharge
+    rechargeDuration: 5
+
+- type: entity
+  parent: CrayonInedible
+  id: CrayonBorg
+  name: electric crayon
+  description: Supposedly the most delicious crayon type in all the universes; unfortunately, you cannot eat.
+  components:
+  - type: Sprite
+    state: electric
+  - type: Item
+    heldPrefix: electric
+  - type: Crayon
+    deleteEmpty: false
+    color: Red
+    selectableColor: true
+  - type: AutoRecharge
+    rechargeDuration: 5
+
+# monocolor crayons
+
+- type: entity
+  parent: Crayon
+  id: CrayonWhite
+  name: white crayon
+  components:
+  - type: Sprite
+    state: white
+  - type: Item
+    heldPrefix: white
+  - type: Crayon
+    color: white
   - type: Tag
     tags:
     - Write
     - Crayon
+    - CrayonWhite
     - Recyclable
     - Trash
 
@@ -103,15 +140,11 @@
   name: black crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: black
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: black
+    heldPrefix: black
   - type: Crayon
     color: black
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -126,15 +159,11 @@
   name: red crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: red
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: red
+    heldPrefix: red
   - type: Crayon
     color: red
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -149,15 +178,11 @@
   name: orange crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: orange
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: orange
+    heldPrefix: orange
   - type: Crayon
     color: orange
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -172,15 +197,11 @@
   name: yellow crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: yellow
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: yellow
+    heldPrefix: yellow
   - type: Crayon
     color: yellow
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -195,15 +216,11 @@
   name: green crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: green
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: green
+    heldPrefix: green
   - type: Crayon
-    color: green
-    capacity: 5
+    color: "#A8E61D"
   - type: Tag
     tags:
     - Write
@@ -218,15 +235,11 @@
   name: blue crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: blue
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: blue
+    heldPrefix: blue
   - type: Crayon
-    color: lightblue
-    capacity: 5
+    color: "#00B7EF"
   - type: Tag
     tags:
     - Write
@@ -241,15 +254,11 @@
   name: purple crayon
   components:
   - type: Sprite
-    sprite: Objects/Fun/crayons.rsi
     state: purple
   - type: Item
-    sprite: Objects/Fun/crayons.rsi
-    size: 1
-    HeldPrefix: purple
+    heldPrefix: purple
   - type: Crayon
     color: purple
-    capacity: 5
   - type: Tag
     tags:
     - Write
@@ -260,29 +269,23 @@
 
 - type: entity
   parent: BoxCardboard
-  id: CrayonBox
+  id: CrayonBoxEmpty
   name: crayon box
-  description: "It's a box of crayons."
+  description: It's a box of crayons.
   components:
   - type: Sprite
     sprite: Objects/Fun/crayons.rsi
-    netsync: false
     state: box
   - type: Storage
-    capacity: 7
+    grid:
+    - 0,0,7,0
+    maxItemSize: Tiny
   - type: Item
     sprite: Objects/Fun/crayons.rsi
-    size: 7
-    HeldPrefix: box
-  - type: StorageFill
-    contents:
-    - id: CrayonRed
-    - id: CrayonOrange
-    - id: CrayonYellow
-    - id: CrayonGreen
-    - id: CrayonBlue
-    - id: CrayonPurple
-    - id: CrayonBlack
+    size: Small
+    shape:
+    - 0,0,1,1
+    heldPrefix: box
   - type: ItemMapper
     mapLayers:
       black_box:
@@ -313,7 +316,26 @@
         whitelist:
           tags:
           - CrayonYellow
-
+      white_box:
+        whitelist:
+          tags:
+          - CrayonWhite
   - type: Appearance
-    visuals:
-    - type: MappedItemVisualizer
+
+- type: entity
+  parent: CrayonBoxEmpty
+  id: CrayonBox
+  suffix: Filled
+  components:
+  - type: EntityTableContainerFill
+    containers:
+      storagebase: !type:AllSelector
+        children:
+        - id: CrayonRed
+        - id: CrayonOrange
+        - id: CrayonYellow
+        - id: CrayonGreen
+        - id: CrayonBlue
+        - id: CrayonPurple
+        - id: CrayonBlack
+        - id: CrayonWhite

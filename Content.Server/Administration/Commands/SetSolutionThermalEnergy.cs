@@ -1,13 +1,16 @@
-using Content.Server.Chemistry.Components.SolutionManager;
-using Content.Server.Chemistry.EntitySystems;
+using Content.Shared.Chemistry.EntitySystems;
 using Content.Shared.Administration;
+using Content.Shared.Chemistry.Components.SolutionManager;
 using Robust.Shared.Console;
+using System.Linq;
 
 namespace Content.Server.Administration.Commands
 {
     [AdminCommand(AdminFlags.Fun)]
-    public sealed class SetSolutionThermalEnergy : IConsoleCommand
+    public sealed partial class SetSolutionThermalEnergy : IConsoleCommand
     {
+        [Dependency] private IEntityManager _entManager = default!;
+
         public string Command => "setsolutionthermalenergy";
         public string Description => "Set the thermal energy of some solution.";
         public string Help => $"Usage: {Command} <target> <solution> <new thermal energy>";
@@ -20,25 +23,26 @@ namespace Content.Server.Administration.Commands
                 return;
             }
 
-            if (!EntityUid.TryParse(args[0], out var uid))
+            if (!NetEntity.TryParse(args[0], out var uidNet) || !_entManager.TryGetEntity(uidNet, out var uid))
             {
                 shell.WriteLine($"Invalid entity id.");
                 return;
             }
 
-            if (!IoCManager.Resolve<IEntityManager>().TryGetComponent(uid, out SolutionContainerManagerComponent man))
+            var solutionContainerSystem = _entManager.System<SharedSolutionContainerSystem>();
+            if (!solutionContainerSystem.TryGetSolution(uid.Value, args[1], out var solutionEnt, out var solution))
             {
-                shell.WriteLine($"Entity does not have any solutions.");
-                return;
-            }
+                var solutions = solutionContainerSystem.EnumerateSolutions(uid.Value).ToArray();
+                if (!solutions.Any())
+                {
+                    shell.WriteLine("Entity does not have any solutions!");
+                    return;
+                }
 
-            if (!man.Solutions.ContainsKey(args[1]))
-            {
-                var validSolutions = string.Join(", ", man.Solutions.Keys);
+                var validSolutions = string.Join(", ", solutions.Select(s => s.Name));
                 shell.WriteLine($"Entity does not have a \"{args[1]}\" solution. Valid solutions are:\n{validSolutions}");
                 return;
             }
-            var solution = man.Solutions[args[1]];
 
             if (!float.TryParse(args[2], out var quantity))
             {
@@ -46,20 +50,21 @@ namespace Content.Server.Administration.Commands
                 return;
             }
 
-            if (solution.HeatCapacity <= 0.0f)
+            if (solution.GetHeatCapacity(null) <= 0.0f)
             {
-                if(quantity != 0.0f)
+                if (quantity != 0.0f)
                 {
                     shell.WriteLine($"Cannot set the thermal energy of a solution with 0 heat capacity to a non-zero number.");
                     return;
                 }
-            } else if(quantity <= 0.0f)
+            }
+            else if (quantity <= 0.0f)
             {
                 shell.WriteLine($"Cannot set the thermal energy of a solution with heat capacity to a non-positive number.");
                 return;
             }
 
-            EntitySystem.Get<SolutionContainerSystem>().SetThermalEnergy(uid, solution, quantity);
+            solutionContainerSystem.SetThermalEnergy(solutionEnt.Value, quantity);
         }
     }
 }

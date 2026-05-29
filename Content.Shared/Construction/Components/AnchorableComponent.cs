@@ -1,17 +1,20 @@
-using System.Threading;
 using Content.Shared.Construction.EntitySystems;
 using Content.Shared.Tools;
-using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.GameStates;
+using Robust.Shared.Prototypes;
 
 namespace Content.Shared.Construction.Components
 {
-    [RegisterComponent, Friend(typeof(SharedAnchorableSystem))]
-    public sealed class AnchorableComponent : Component
+    [RegisterComponent, Access(typeof(AnchorableSystem)), NetworkedComponent, AutoGenerateComponentState]
+    public sealed partial class AnchorableComponent : Component
     {
-        [DataField("tool", customTypeSerializer: typeof(PrototypeIdSerializer<ToolQualityPrototype>))]
-        public string Tool { get; private set; } = "Anchoring";
+        [DataField]
+        public ProtoId<ToolQualityPrototype> Tool { get; private set; } = "Anchoring";
 
-        [DataField("snap")]
+        [DataField, AutoNetworkedField]
+        public AnchorableFlags Flags = AnchorableFlags.Anchorable | AnchorableFlags.Unanchorable;
+
+        [DataField]
         [ViewVariables(VVAccess.ReadWrite)]
         public bool Snap { get; private set; } = true;
 
@@ -19,10 +22,16 @@ namespace Content.Shared.Construction.Components
         /// Base delay to use for anchoring.
         /// </summary>
         [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("delay")]
+        [DataField]
         public float Delay = 1f;
+    }
 
-        public CancellationTokenSource? CancelToken = null;
+    [Flags]
+    public enum AnchorableFlags : byte
+    {
+        None = 0,
+        Anchorable = 1 << 0,
+        Unanchorable = 1 << 1,
     }
 
     public abstract class BaseAnchoredAttemptEvent : CancellableEntityEventArgs
@@ -31,16 +40,22 @@ namespace Content.Shared.Construction.Components
         public EntityUid Tool { get; }
 
         /// <summary>
+        /// This is shown to the player after the entity fails to anchor or unanchor as a popup
+        /// </summary>
+        public string? FailMessage;
+
+        /// <summary>
         ///     Extra delay to add to the do_after.
         ///     Add to this, don't replace it.
         ///     Output parameter.
         /// </summary>
         public float Delay { get; set; } = 0f;
 
-        protected BaseAnchoredAttemptEvent(EntityUid user, EntityUid tool)
+        protected BaseAnchoredAttemptEvent(EntityUid user, EntityUid tool, string? failMessage = null)
         {
             User = user;
             Tool = tool;
+            FailMessage = failMessage;
         }
     }
 

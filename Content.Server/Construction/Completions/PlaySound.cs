@@ -1,15 +1,14 @@
 using Content.Shared.Construction;
-using Content.Shared.Sound;
 using JetBrains.Annotations;
 using Robust.Shared.Audio;
-using Robust.Shared.Player;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Random;
 
 namespace Content.Server.Construction.Completions
 {
     [UsedImplicitly]
     [DataDefinition]
-    public sealed class PlaySound : IGraphAction
+    public sealed partial class PlaySound : IGraphAction
     {
         [DataField("sound", required: true)] public SoundSpecifier Sound { get; private set; } = default!;
 
@@ -23,7 +22,9 @@ namespace Content.Server.Construction.Completions
         public void PerformAction(EntityUid uid, EntityUid? userUid, IEntityManager entityManager)
         {
             var scale = (float) IoCManager.Resolve<IRobustRandom>().NextGaussian(1, Variation);
-            SoundSystem.Play(Filter.Pvs(uid, entityManager: entityManager), Sound.GetSound(), uid, AudioParams.WithPitchScale(scale));
+            if (entityManager.TryGetComponent<TransformComponent>(uid, out var xform))
+                entityManager.EntitySysManager.GetEntitySystem<SharedAudioSystem>()
+                .PlayPvs(Sound, xform.Coordinates, AudioParams.WithPitchScale(scale));
         }
     }
 }

@@ -1,24 +1,30 @@
-using Content.Shared.Sound;
+using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
 
 namespace Content.Shared.Standing
 {
-    [Friend(typeof(StandingStateSystem))]
-    [RegisterComponent, NetworkedComponent]
-    public sealed class StandingStateComponent : Component
+    [RegisterComponent, NetworkedComponent, AutoGenerateComponentState]
+    [Access(typeof(StandingStateSystem))]
+    public sealed partial class StandingStateComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("downSound")]
-        public SoundSpecifier DownSound { get; } = new SoundCollectionSpecifier("BodyFall");
+        [DataField]
+        public SoundSpecifier? DownSound { get; private set; } = new SoundCollectionSpecifier("BodyFall");
 
-        [DataField("standing")]
+        [DataField, AutoNetworkedField]
         public bool Standing { get; set; } = true;
+
+        /// <summary>
+        /// Friction modifier applied to an entity in the downed state.
+        /// </summary>
+        [DataField, AutoNetworkedField]
+        public float DownFrictionMod = 0.4f;
 
         /// <summary>
         ///     List of fixtures that had their collision mask changed when the entity was downed.
         ///     Required for re-adding the collision mask.
         /// </summary>
-        [DataField("changedFixtures")]
+        [DataField, AutoNetworkedField]
         public List<string> ChangedFixtures = new();
     }
 }

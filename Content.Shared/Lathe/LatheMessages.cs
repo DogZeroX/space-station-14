@@ -1,94 +1,79 @@
+using Content.Shared.Research.Prototypes;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
 
 namespace Content.Shared.Lathe;
 
-        /// <summary>
-        ///     Sent to the server to sync material storage and the recipe queue.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheSyncRequestMessage : BoundUserInterfaceMessage
-        {
-            public LatheSyncRequestMessage()
-            {
-            }
-        }
+[Serializable, NetSerializable]
+public sealed class LatheUpdateState : BoundUserInterfaceState
+{
+    public List<ProtoId<LatheRecipePrototype>> Recipes;
 
-        /// <summary>
-        ///     Sent to the server to sync the lathe's technology database with the research server.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheServerSyncMessage : BoundUserInterfaceMessage
-        {
-            public LatheServerSyncMessage()
-            {
-            }
-        }
+    public LatheRecipeBatch[] Queue;
 
-        /// <summary>
-        ///     Sent to the server to open the ResearchClient UI.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheServerSelectionMessage : BoundUserInterfaceMessage
-        {
-            public LatheServerSelectionMessage()
-            {
-            }
-        }
+    public ProtoId<LatheRecipePrototype>? CurrentlyProducing;
 
-        /// <summary>
-        ///     Sent to the client when the lathe is producing a recipe.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheProducingRecipeMessage : BoundUserInterfaceMessage
-        {
-            public readonly string ID;
-            public LatheProducingRecipeMessage(string id)
-            {
-                ID = id;
-            }
-        }
+    public LatheUpdateState(List<ProtoId<LatheRecipePrototype>> recipes, LatheRecipeBatch[] queue, ProtoId<LatheRecipePrototype>? currentlyProducing = null)
+    {
+        Recipes = recipes;
+        Queue = queue;
+        CurrentlyProducing = currentlyProducing;
+    }
+}
 
-        /// <summary>
-        ///     Sent to the client when the lathe stopped/finished producing a recipe.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheStoppedProducingRecipeMessage : BoundUserInterfaceMessage
-        {
-            public LatheStoppedProducingRecipeMessage()
-            {
-            }
-        }
+/// <summary>
+///     Sent to the server to sync material storage and the recipe queue.
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class LatheSyncRequestMessage : BoundUserInterfaceMessage
+{
 
-        /// <summary>
-        ///     Sent to the client to let it know about the recipe queue.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheFullQueueMessage : BoundUserInterfaceMessage
-        {
-            public readonly Queue<string> Recipes;
-            public LatheFullQueueMessage(Queue<string> recipes)
-            {
-                Recipes = recipes;
-            }
-        }
+}
 
-        /// <summary>
-        ///     Sent to the server when a client queues a new recipe.
-        /// </summary>
-        [Serializable, NetSerializable]
-        public sealed class LatheQueueRecipeMessage : BoundUserInterfaceMessage
-        {
-            public readonly string ID;
-            public readonly int Quantity;
-            public LatheQueueRecipeMessage(string id, int quantity)
-            {
-                ID = id;
-                Quantity = quantity;
-            }
-        }
+/// <summary>
+///     Sent to the server when a client queues a new recipe.
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class LatheQueueRecipeMessage : BoundUserInterfaceMessage
+{
+    public readonly string ID;
+    public readonly int Quantity;
+    public LatheQueueRecipeMessage(string id, int quantity)
+    {
+        ID = id;
+        Quantity = quantity;
+    }
+}
 
-        [NetSerializable, Serializable]
-        public enum LatheUiKey
-        {
-            Key,
-        }
+/// <summary>
+///     Sent to the server to remove a batch from the queue.
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class LatheDeleteRequestMessage(int index) : BoundUserInterfaceMessage
+{
+    public int Index = index;
+}
+
+/// <summary>
+///     Sent to the server to move the position of a batch in the queue.
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class LatheMoveRequestMessage(int index, int change) : BoundUserInterfaceMessage
+{
+    public int Index = index;
+    public int Change = change;
+}
+
+/// <summary>
+///     Sent to the server to stop producing the current item.
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class LatheAbortFabricationMessage() : BoundUserInterfaceMessage
+{
+}
+
+[NetSerializable, Serializable]
+public enum LatheUiKey
+{
+    Key,
+}

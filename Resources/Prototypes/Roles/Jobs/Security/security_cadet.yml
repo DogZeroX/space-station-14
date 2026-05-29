@@ -1,26 +1,51 @@
-﻿- type: job
+- type: job
   id: SecurityCadet
-  name: "security cadet"
+  name: job-name-cadet
+  description: job-description-cadet
+  playTimeTracker: JobSecurityCadet
+  requirements:
+    - !type:OverallPlaytimeRequirement
+      time: 10h
+    - !type:DepartmentTimeRequirement
+      department: Security
+      time: 10h
+      inverted: true # stop playing intern if you're good at security!
   startingGear: SecurityCadetGear
-  departments:
-  - Civilian
-  - Security
-  icon: "SecurityCadet"
-  supervisors: "security officers, the warden, and the head of security"
-  canBeAntag: false
+  icon: "JobIconSecurityCadet"
+  supervisors: job-supervisors-security
   access:
   - Security
   - Brig
   - Maintenance
+  - External
+  - Cryogenics
+  special:
+  - !type:AddImplantSpecial
+    implants: [ MindShieldImplant ]
 
 - type: startingGear
   id: SecurityCadetGear
   equipment:
-    jumpsuit: ClothingUniformJumpsuitColorRed
-    back: ClothingBackpackSecurityFilled
-    shoes: ClothingShoesBootsJack
+    shoes: ClothingShoesBootsJackFilled
+    outerClothing: ClothingOuterArmorBasic
     id: SecurityCadetPDA
     ears: ClothingHeadsetSecurity
-  innerclothingskirt: ClothingUniformJumpskirtColorRed
-  satchel: ClothingBackpackSatchelSecurityFilled
-  duffelbag: ClothingBackpackDuffelSecurityFilled
+    belt: ClothingBeltSecurityFilled
+    pocket1: WeaponPistolMk58
+    pocket2: BookSecurity
+  storage:
+    back:
+    - Flash
+    - MagazinePistol
+
+- type: chameleonOutfit
+  id: SecurityCadetChameleonOutfit
+  job: SecurityCadet
+  hasMindShield: true
+  equipment:
+    head: ClothingHeadHelmetBasic
+    eyes: ClothingEyesHudSecurity
+    mask: ClothingMaskGasSecurity
+    neck: ClothingNeckScarfStripedRed
+    belt: ClothingBeltSecurity
+    gloves: ClothingHandsGlovesColorBlack

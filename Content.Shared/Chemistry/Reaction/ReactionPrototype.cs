@@ -1,7 +1,8 @@
 using Content.Shared.Chemistry.Reagent;
 using Content.Shared.Database;
+using Content.Shared.EntityEffects;
 using Content.Shared.FixedPoint;
-using Content.Shared.Sound;
+using Robust.Shared.Audio;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype.Dictionary;
 
@@ -10,15 +11,15 @@ namespace Content.Shared.Chemistry.Reaction
     /// <summary>
     /// Prototype for chemical reaction definitions
     /// </summary>
-    [Prototype("reaction")]
-    public sealed class ReactionPrototype : IPrototype, IComparable<ReactionPrototype>
+    [Prototype]
+    public sealed partial class ReactionPrototype : IPrototype, IComparable<ReactionPrototype>
     {
         [ViewVariables]
-        [IdDataFieldAttribute]
-        public string ID { get; } = default!;
+        [IdDataField]
+        public string ID { get; private set; } = default!;
 
         [DataField("name")]
-        public string Name { get; } = string.Empty;
+        public string Name { get; private set; } = string.Empty;
 
         /// <summary>
         /// Reactants required for the reaction to occur.
@@ -33,10 +34,22 @@ namespace Content.Shared.Chemistry.Reaction
         public float MinimumTemperature = 0.0f;
 
         /// <summary>
+        ///     If true, this reaction will attempt to conserve thermal energy.
+        /// </summary>
+        [DataField("conserveEnergy")]
+        public bool ConserveEnergy = true;
+
+        /// <summary>
         ///     The maximum temperature the reaction can occur at.
         /// </summary>
         [DataField("maxTemp")]
         public float MaximumTemperature = float.PositiveInfinity;
+
+        /// <summary>
+        ///     The required mixing categories for an entity to mix the solution with for the reaction to occur
+        /// </summary>
+        [DataField("requiredMixerCategories")]
+        public List<ProtoId<MixingCategoryPrototype>>? MixingCategories;
 
         /// <summary>
         /// Reagents created when the reaction occurs.
@@ -47,7 +60,7 @@ namespace Content.Shared.Chemistry.Reaction
         /// <summary>
         /// Effects to be triggered when the reaction occurs.
         /// </summary>
-        [DataField("effects", serverOnly: true)] public List<ReagentEffect> Effects = new();
+        [DataField("effects")] public EntityEffect[] Effects = [];
 
         /// <summary>
         /// How dangerous is this effect? Stuff like bicaridine should be low, while things like methamphetamine
@@ -72,6 +85,17 @@ namespace Content.Shared.Chemistry.Reaction
         public int Priority;
 
         /// <summary>
+        /// Determines whether or not this reaction creates a new chemical (false) or if it's a breakdown for existing chemicals (true)
+        /// Used in the chemistry guidebook to make divisions between recipes and reaction sources.
+        /// </summary>
+        /// <example>
+        /// Mixing together two reagents to get a third -> false
+        /// Heating a reagent to break it down into 2 different ones -> true
+        /// </example>
+        [DataField]
+        public bool Source;
+
+        /// <summary>
         ///     Comparison for creating a sorted set of reactions. Determines the order in which reactions occur.
         /// </summary>
         public int CompareTo(ReactionPrototype? other)
@@ -88,7 +112,7 @@ namespace Content.Shared.Chemistry.Reaction
             if (Products.Count != other.Products.Count)
                 return Products.Count - other.Products.Count;
 
-            return ID.CompareTo(other.ID);
+            return string.Compare(ID, other.ID, StringComparison.Ordinal);
         }
     }
 
@@ -96,7 +120,7 @@ namespace Content.Shared.Chemistry.Reaction
     /// Prototype for chemical reaction reactants.
     /// </summary>
     [DataDefinition]
-    public sealed class ReactantPrototype
+    public sealed partial class ReactantPrototype
     {
         [DataField("amount")]
         private FixedPoint2 _amount = FixedPoint2.New(1);

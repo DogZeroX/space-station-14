@@ -1,6 +1,5 @@
-# Parchís board item (normal in game item you can hold in your hand)
 - type: entity
-  parent: BaseItem
+  parent: BaseBoardEntity
   id: ParchisBoard
   name: parchís board
   description: Cross and circle board game famous for destroying countless friendships.
@@ -13,16 +12,15 @@
     size: 574, 574
     setup:
       !type:TabletopParchisSetup
+      boardPrototype: &ParchisBoard ParchisBoardTabletop
 
-# Parchís tabletop item (item only visible in tabletop game)
 - type: entity
-  id: ParchisBoardTabletop
+  parent: BaseBoardTabletop
+  id: *ParchisBoard
   name: parchís
-  noSpawn: true
+  categories: [ HideSpawnMenu ]
   components:
   - type: Sprite
     sprite: Objects/Fun/Tabletop/parchis_tabletop.rsi
     state: board
-    noRot: false
-    drawdepth: FloorTiles
 

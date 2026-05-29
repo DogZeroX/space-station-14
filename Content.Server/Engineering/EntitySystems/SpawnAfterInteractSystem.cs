@@ -1,20 +1,24 @@
-using Content.Server.Coordinates.Helpers;
-using Content.Server.DoAfter;
 using Content.Server.Engineering.Components;
 using Content.Server.Stack;
+using Content.Shared.Coordinates.Helpers;
+using Content.Shared.DoAfter;
 using Content.Shared.Interaction;
+using Content.Shared.Maps;
+using Content.Shared.Physics;
 using Content.Shared.Stacks;
 using JetBrains.Annotations;
-using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 
 namespace Content.Server.Engineering.EntitySystems
 {
     [UsedImplicitly]
-    public sealed class SpawnAfterInteractSystem : EntitySystem
+    public sealed partial class SpawnAfterInteractSystem : EntitySystem
     {
-        [Dependency] private readonly IMapManager _mapManager = default!;
-        [Dependency] private readonly DoAfterSystem _doAfterSystem = default!;
-        [Dependency] private readonly StackSystem _stackSystem = default!;
+        [Dependency] private SharedDoAfterSystem _doAfterSystem = default!;
+        [Dependency] private StackSystem _stackSystem = default!;
+        [Dependency] private TurfSystem _turfSystem = default!;
+        [Dependency] private SharedTransformSystem _transform = default!;
+        [Dependency] private SharedMapSystem _maps = default!;
 
         public override void Initialize()
         {
@@ -25,16 +29,20 @@ namespace Content.Server.Engineering.EntitySystems
 
         private async void HandleAfterInteract(EntityUid uid, SpawnAfterInteractComponent component, AfterInteractEvent args)
         {
+            if (!args.CanReach && !component.IgnoreDistance)
+                return;
             if (string.IsNullOrEmpty(component.Prototype))
                 return;
-            if (!_mapManager.TryGetGrid(args.ClickLocation.GetGridId(EntityManager), out var grid))
+
+            var gridUid = _transform.GetGrid(args.ClickLocation);
+            if (!TryComp<MapGridComponent>(gridUid, out var grid))
                 return;
-            if (!grid.TryGetTileRef(args.ClickLocation, out var tileRef))
+            if (!_maps.TryGetTileRef(gridUid.Value, grid, args.ClickLocation, out var tileRef))
                 return;
 
             bool IsTileClear()
             {
-                return tileRef.Tile.IsEmpty == false;
+                return tileRef.Tile.IsEmpty == false && !_turfSystem.IsTileBlocked(tileRef, CollisionGroup.MobMask);
             }
 
             if (!IsTileClear())
@@ -42,11 +50,9 @@ namespace Content.Server.Engineering.EntitySystems
 
             if (component.DoAfterTime > 0)
             {
-                var doAfterArgs = new DoAfterEventArgs(args.User, component.DoAfterTime)
+                var doAfterArgs = new DoAfterArgs(EntityManager, args.User, component.DoAfterTime, new AwaitedDoAfterEvent(), null)
                 {
-                    BreakOnUserMove = true,
-                    BreakOnStun = true,
-                    PostCheck = IsTileClear,
+                    BreakOnMove = true,
                 };
                 var result = await _doAfterSystem.WaitDoAfter(doAfterArgs);
 
@@ -54,19 +60,19 @@ namespace Content.Server.Engineering.EntitySystems
                     return;
             }
 
-            if (component.Deleted || Deleted(component.Owner))
+            if (component.Deleted || !IsTileClear())
                 return;
 
-            if (EntityManager.TryGetComponent<SharedStackComponent?>(component.Owner, out var stackComp)
-                && component.RemoveOnInteract && !_stackSystem.Use(uid, 1, stackComp))
+            if (TryComp<StackComponent>(uid, out var stackComp)
+                && component.RemoveOnInteract && !_stackSystem.TryUse((uid, stackComp), 1))
             {
                 return;
             }
 
-            EntityManager.SpawnEntity(component.Prototype, args.ClickLocation.SnapToGrid(grid));
+            Spawn(component.Prototype, args.ClickLocation.SnapToGrid(grid));
 
-            if (component.RemoveOnInteract && stackComp == null && !((!EntityManager.EntityExists(component.Owner) ? EntityLifeStage.Deleted : EntityManager.GetComponent<MetaDataComponent>(component.Owner).EntityLifeStage) >= EntityLifeStage.Deleted))
-                EntityManager.DeleteEntity(component.Owner);
+            if (component.RemoveOnInteract && stackComp == null)
+                TryQueueDel(uid);
         }
     }
 }

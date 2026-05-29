@@ -6,15 +6,13 @@ using Robust.Shared.Console;
 namespace Content.Server.Administration.Commands;
 
 [AdminCommand(AdminFlags.Fun)]
-public sealed class AddPolymorphActionCommand : IConsoleCommand
+public sealed partial class AddPolymorphActionCommand : LocalizedEntityCommands
 {
-    public string Command => "addpolymorphaction";
+    [Dependency] private PolymorphSystem _polySystem = default!;
 
-    public string Description => Loc.GetString("add-polymorph-action-command-description");
+    public override string Command => "addpolymorphaction";
 
-    public string Help => Loc.GetString("add-polymorph-action-command-help");
-
-    public void Execute(IConsoleShell shell, string argStr, string[] args)
+    public override void Execute(IConsoleShell shell, string argStr, string[] args)
     {
         if (args.Length != 2)
         {
@@ -22,16 +20,13 @@ public sealed class AddPolymorphActionCommand : IConsoleCommand
             return;
         }
 
-        if (!EntityUid.TryParse(args[0], out var entityUid))
+        if (!NetEntity.TryParse(args[0], out var entityUidNet) || !EntityManager.TryGetEntity(entityUidNet, out var entityUid))
         {
-            shell.WriteError(Loc.GetString("shell-entity-uid-must-be-number"));
+            shell.WriteError(Loc.GetString("shell-could-not-find-entity-with-uid", ("uid", args[0])));
             return;
         }
 
-        var entityManager = IoCManager.Resolve<IEntityManager>();
-        var polySystem = entityManager.EntitySysManager.GetEntitySystem<PolymorphableSystem>();
-
-        entityManager.EnsureComponent<PolymorphableComponent>(entityUid);
-        polySystem.CreatePolymorphAction(args[1], entityUid);
+        var polymorphable = EntityManager.EnsureComponent<PolymorphableComponent>(entityUid.Value);
+        _polySystem.CreatePolymorphAction(args[1], (entityUid.Value, polymorphable));
     }
 }

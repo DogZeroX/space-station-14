@@ -21,12 +21,6 @@ namespace Content.Shared.Atmos.Piping
     }
 
     [Serializable, NetSerializable]
-    public enum ThermoMachineVisuals : byte
-    {
-        Enabled,
-    }
-
-    [Serializable, NetSerializable]
     public enum PumpVisuals : byte
     {
         Enabled,
@@ -36,5 +30,11 @@ namespace Content.Shared.Atmos.Piping
     public enum FilterVisuals : byte
     {
         Enabled,
+    }
+
+    [Serializable, NetSerializable]
+    public enum PressureRegulatorVisuals : byte
+    {
+        State,
     }
 }

@@ -1,14 +1,20 @@
 reagent-name-flour = flour
 reagent-desc-flour = Used for baking.
 
+reagent-name-cornmeal = cornmeal
+reagent-desc-cornmeal = Used for baking.
+
 reagent-name-oats = oats
 reagent-desc-oats = Used for a variety of tasty purposes.
 
 reagent-name-enzyme = universal enzyme
 reagent-desc-enzyme = Used in cooking various dishes.
 
-reagent-name-egg = egg
-reagent-desc-egg = Used for baking.
+reagent-name-egg = cooked egg
+reagent-desc-egg = Cooked chicken embryo, delicious.
+
+reagent-name-raw-egg = raw egg
+reagent-desc-raw-egg = Used for baking.
 
 reagent-name-sugar = sugar
 reagent-desc-sugar = Tasty spacey sugar!
@@ -30,3 +36,6 @@ reagent-desc-oil = Used by chefs to cook.
 
 reagent-name-capsaicin-oil = Capsaicin Oil
 reagent-desc-capsaicin-oil = Capsaicin Oil is the ingredient found in different types of hot peppers.
+
+reagent-name-frost-oil = Frost Oil
+reagent-desc-frost-oil = Frost Oil is the ingredient found in chilly peppers, a rare pepper mutation.

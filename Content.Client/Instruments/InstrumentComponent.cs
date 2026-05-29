@@ -4,8 +4,8 @@ using Robust.Shared.Audio.Midi;
 
 namespace Content.Client.Instruments;
 
-[RegisterComponent, ComponentReference(typeof(SharedInstrumentComponent))]
-public sealed class InstrumentComponent : SharedInstrumentComponent
+[RegisterComponent]
+public sealed partial class InstrumentComponent : SharedInstrumentComponent
 {
     public event Action? OnMidiPlaybackEnded;
 
@@ -39,7 +39,6 @@ public sealed class InstrumentComponent : SharedInstrumentComponent
     /// <summary>
     ///     Whether this instrument is handheld or not.
     /// </summary>
-    [ViewVariables]
     [DataField("handheld")]
     public bool Handheld { get; set; } // TODO: Replace this by simply checking if the entity has an ItemComponent.
 

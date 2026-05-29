@@ -1,22 +1,18 @@
-using System.Collections.Generic;
 using Content.Client.Atmos.Overlays;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.EntitySystems;
 using Content.Shared.GameTicking;
 using JetBrains.Annotations;
 using Robust.Client.Graphics;
-using Robust.Shared.IoC;
-using Robust.Shared.Map;
-using Robust.Shared.Maths;
 
 namespace Content.Client.Atmos.EntitySystems
 {
     [UsedImplicitly]
-    internal sealed class AtmosDebugOverlaySystem : SharedAtmosDebugOverlaySystem
+    internal sealed partial class AtmosDebugOverlaySystem : SharedAtmosDebugOverlaySystem
     {
+        [Dependency] private IOverlayManager _overlayManager = default!;
 
-        private readonly Dictionary<GridId, AtmosDebugOverlayMessage> _tileData =
-            new();
+        public readonly Dictionary<EntityUid, AtmosDebugOverlayMessage> TileData = [];
 
         // Configuration set by debug commands and used by AtmosDebugOverlay {
         /// <summary>Value source for display</summary>
@@ -31,6 +27,8 @@ namespace Content.Client.Atmos.EntitySystems
         public bool CfgCBM = false;
         // }
 
+        private AtmosDebugOverlay? _overlay;
+
         public override void Initialize()
         {
             base.Initialize();
@@ -40,58 +38,57 @@ namespace Content.Client.Atmos.EntitySystems
             SubscribeNetworkEvent<AtmosDebugOverlayDisableMessage>(HandleAtmosDebugOverlayDisableMessage);
 
             SubscribeLocalEvent<GridRemovalEvent>(OnGridRemoved);
-
-            var overlayManager = IoCManager.Resolve<IOverlayManager>();
-            if(!overlayManager.HasOverlay<AtmosDebugOverlay>())
-                overlayManager.AddOverlay(new AtmosDebugOverlay());
         }
 
         private void OnGridRemoved(GridRemovalEvent ev)
         {
-            if (_tileData.ContainsKey(ev.GridId))
+            if (TileData.ContainsKey(ev.EntityUid))
             {
-                _tileData.Remove(ev.GridId);
+                TileData.Remove(ev.EntityUid);
             }
         }
 
         private void HandleAtmosDebugOverlayMessage(AtmosDebugOverlayMessage message)
         {
-            _tileData[message.GridId] = message;
+            TileData[GetEntity(message.GridId)] = message;
+
+            if (_overlay is not null)
+                return;
+
+            _overlay = new AtmosDebugOverlay(this);
+            _overlayManager.AddOverlay(_overlay);
         }
 
         private void HandleAtmosDebugOverlayDisableMessage(AtmosDebugOverlayDisableMessage ev)
         {
-            _tileData.Clear();
+            TileData.Clear();
+            RemoveOverlay();
         }
 
         public override void Shutdown()
         {
             base.Shutdown();
-            var overlayManager = IoCManager.Resolve<IOverlayManager>();
-            if (overlayManager.HasOverlay<AtmosDebugOverlay>())
-                overlayManager.RemoveOverlay<AtmosDebugOverlay>();
+
+            RemoveOverlay();
         }
 
         public void Reset(RoundRestartCleanupEvent ev)
         {
-            _tileData.Clear();
+            TileData.Clear();
         }
 
-        public bool HasData(GridId gridId)
+        public bool HasData(EntityUid gridId)
         {
-            return _tileData.ContainsKey(gridId);
+            return TileData.ContainsKey(gridId);
         }
 
-        public AtmosDebugOverlayData? GetData(GridId gridIndex, Vector2i indices)
+        private void RemoveOverlay()
         {
-            if (!_tileData.TryGetValue(gridIndex, out var srcMsg))
-                return null;
+            if (_overlay is null)
+                return;
 
-            var relative = indices - srcMsg.BaseIdx;
-            if (relative.X < 0 || relative.Y < 0 || relative.X >= LocalViewRange || relative.Y >= LocalViewRange)
-                return null;
-
-            return srcMsg.OverlayData[relative.X + relative.Y * LocalViewRange];
+            _overlayManager.RemoveOverlay(_overlay);
+            _overlay = null;
         }
     }
 
